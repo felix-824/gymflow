@@ -89,7 +89,7 @@ public async updateComment(
 		{
 			new: true,
 		},
-	);
+	).exec();
 
 	if (!result) {
 		throw new InternalServerErrorException(Message.UPDATE_FAILED);
@@ -146,7 +146,7 @@ public async getComments(
 				],
 			},
 		},
-	]);
+	]).exec();
 
 	if (!result.length) {
 		throw new InternalServerErrorException(Message.NO_DATA_FOUND);

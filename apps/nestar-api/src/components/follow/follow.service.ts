@@ -7,6 +7,7 @@ import { Direction, Message } from '../../libs/enums/common.enum';
 import { lookupAuthMemberFollowed, lookupAuthMemberLiked, lookupFollowerData, lookupFollowingData } from '../../libs/config';
 import { FollowInquiry } from '../../libs/dto/follow/follow.input';
 import { T } from '../../libs/types/common';
+import { exec } from 'child_process';
 
 @Injectable()
 export class FollowService {
@@ -66,7 +67,7 @@ public async unsubscribe(followerId: ObjectId, followingId: ObjectId): Promise<F
 	const result = await this.followModel.findOneAndDelete({
 		followingId: followingId,
 		followerId: followerId,
-	});
+	}).exec();
 
 	if (!result) {
 		throw new InternalServerErrorException(Message.NO_DATA_FOUND);

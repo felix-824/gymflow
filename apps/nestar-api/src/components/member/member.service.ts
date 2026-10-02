@@ -69,7 +69,7 @@ export class MemberService {
 				{ new: true },
 			)
 			.exec();
-		if (!result) throw new InternalServerErrorException(Message.UPLOAD_FAILED);
+		if (!result) throw new InternalServerErrorException(Message.UPDATE_FAILED);
 
 		result.accessToken = await this.authService.createToken(result);
 		return result;
@@ -165,7 +165,7 @@ export class MemberService {
 		const match: T = {};
 		const sort: T = { [input?.sort ?? 'createdAd']: input?.direction ?? Direction.DESC };
 
-		if (memberStatus) match.MemberStatus = memberStatus;
+		if (memberStatus) match.memberStatus = memberStatus;
 		if (memberType) match.memberType = memberType;
 
 		if (text) match.memberNick = { $regax: new RegExp(text, 'i') };

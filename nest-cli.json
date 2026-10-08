@@ -1,31 +1,31 @@
 {
   "$schema": "https://json.schemastore.org/nest-cli",
   "collection": "@nestjs/schematics",
-  "sourceRoot": "apps/nestar-api/src",
+  "sourceRoot": "apps/gymflow-api/src",
   "compilerOptions": {
     "deleteOutDir": true,
     "webpack": true,
-    "tsConfigPath": "apps/nestar-api/tsconfig.app.json"
+    "tsConfigPath": "apps/gymflow-api/tsconfig.app.json"
   },
   "monorepo": true,
-  "root": "apps/nestar-api",
+  "root": "apps/gymflow-api",
   "projects": {
-    "nestar-api": {
+    "gymflow-api": {
       "type": "application",
-      "root": "apps/nestar-api",
+      "root": "apps/gymflow-api",
       "entryFile": "main",
-      "sourceRoot": "apps/nestar-api/src",
+      "sourceRoot": "apps/gymflow-api/src",
       "compilerOptions": {
-        "tsConfigPath": "apps/nestar-api/tsconfig.app.json"
+        "tsConfigPath": "apps/gymflow-api/tsconfig.app.json"
       }
     },
-    "nestar-batch": {
+    "gymflow-batch": {
       "type": "application",
-      "root": "apps/nestar-batch",
+      "root": "apps/gymflow-batch",
       "entryFile": "main",
-      "sourceRoot": "apps/nestar-batch/src",
+      "sourceRoot": "apps/gymflow-batch/src",
       "compilerOptions": {
-        "tsConfigPath": "apps/nestar-batch/tsconfig.app.json"
+        "tsConfigPath": "apps/gymflow-batch/tsconfig.app.json"
       }
     }
   }

@@ -1,3 +1,14 @@
+# GymFlow
+
+GymFlow is a NestJS GraphQL backend monorepo for a fitness and gym management platform. This naming layer retains the existing domain behavior and API contracts.
+
+| Application | Development | Build | Production |
+| --- | --- | --- | --- |
+| gymflow-api | npm run start:dev | npm run build -- gymflow-api | npm run start:prod |
+| gymflow-batch | npm run start:dev:batch | npm run build -- gymflow-batch | npm run start:prod:batch |
+
+Build each application before running its production command. The applications retain their existing environment variables and database configuration.
+
 <p align="center">
   <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
 </p>
@@ -23,7 +34,7 @@
 
 ## Description
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+GymFlow backend built with [Nest](https://github.com/nestjs/nest), GraphQL, and MongoDB. The monorepo contains the gymflow-api application and gymflow-batch worker.
 
 ## Project setup
 

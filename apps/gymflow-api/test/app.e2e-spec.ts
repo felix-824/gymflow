@@ -4,7 +4,7 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
 
-describe('AppController (e2e)', () => {
+describe('GymFlow API AppController (e2e)', () => {
   let app: INestApplication<App>;
 
   beforeEach(async () => {
@@ -20,7 +20,7 @@ describe('AppController (e2e)', () => {
     return request(app.getHttpServer())
       .get('/')
       .expect(200)
-      .expect('Hello World!');
+      .expect('Welcome to GymFlow API Server!');
   });
 
   afterEach(async () => {

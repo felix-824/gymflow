@@ -4,7 +4,8 @@ import { UseGuards } from '@nestjs/common';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { AuthMember } from '../auth/decorators/authMember.decorator';
 import { CommentInput, CommentsInquiry } from '../../libs/dto/comment/comment.input';
-import type { ObjectId } from 'mongoose';
+import { Types } from 'mongoose';
+type ObjectId = Types.ObjectId;
 import { Comments, Comment } from '../../libs/dto/comment/comment';
 import { CommentUpdate } from '../../libs/dto/comment/comment.update';
 import { shapeIntoMongoObjectId } from '../../libs/config';
@@ -18,7 +19,7 @@ export class CommentResolver {
 	constructor(private readonly commentService: CommentService) {}
 
 	@UseGuards(AuthGuard)
-	@Mutation((returns) => Comment)
+	@Mutation(() => Comment)
 	public async createComment(
 		@Args('input') input: CommentInput,
 		@AuthMember('_id') memberId: ObjectId,
@@ -29,7 +30,7 @@ export class CommentResolver {
 
 	// Login qilgan member o‘z commentini yangilaydi.
 	@UseGuards(AuthGuard)
-	@Mutation((returns) => Comment)
+	@Mutation(() => Comment)
 	public async updateComment(
 		@Args('input') input: CommentUpdate,
 		@AuthMember('_id') memberId: ObjectId,
@@ -41,13 +42,13 @@ export class CommentResolver {
 
 	// Commentlarni refId bo‘yicha olib keladi va pagination bilan qaytaradi.
 	@UseGuards(WithoutGuard)
-	@Query((returns) => Comments)
+	@Query(() => Comments)
 	public async getComments(
 		@Args('input') input: CommentsInquiry,
 		@AuthMember('_id') memberId: ObjectId,
 	): Promise<Comments> {
 		console.log('Query: getComments');
-		input.search.commentRefId = shapeIntoMongoObjectId(input.search.commentRefId);
+		input.search.articleId = shapeIntoMongoObjectId(input.search.articleId);
 		const result = await this.commentService.getComments(memberId, input);
 		return result;
 	}
@@ -55,7 +56,7 @@ export class CommentResolver {
 	// Admin commentni ID orqali butunlay o‘chiradi.
 	@Roles(MemberType.ADMIN)
 	@UseGuards(RolesGuard)
-	@Mutation((returns) => Comment)
+	@Mutation(() => Comment)
 	public async removeCommentByAdmin(@Args('commentId') input: string): Promise<Comment> {
 		console.log('Mutation: removeCommentByAdmin');
 		const commentId = shapeIntoMongoObjectId(input);

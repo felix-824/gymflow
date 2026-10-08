@@ -1,6 +1,7 @@
 import { Field, ObjectType } from '@nestjs/graphql';
 import { LikeGroup } from '../../enums/like.enum';
-import type { ObjectId } from 'mongoose';
+import { Types } from 'mongoose';
+type ObjectId = Types.ObjectId;
 
 @ObjectType()
 export class MeLiked {
@@ -34,5 +35,3 @@ export class Like {
 	@Field(() => Date)
 	updatedAt: Date;
 }
-
-

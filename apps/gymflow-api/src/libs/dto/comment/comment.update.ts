@@ -1,7 +1,8 @@
 import { Field, InputType } from '@nestjs/graphql';
 import { IsNotEmpty, IsOptional, Length } from 'class-validator';
 import { CommentStatus } from '../../enums/comment.enum';
-import type { ObjectId } from 'mongoose';
+import { Types } from 'mongoose';
+type ObjectId = Types.ObjectId;
 
 @InputType()
 export class CommentUpdate {

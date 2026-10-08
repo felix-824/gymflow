@@ -1,40 +1,48 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
 import * as bcrypt from 'bcryptjs';
-import { Member } from '../../libs/dto/member/member';
-import { T } from '../../libs/types/common';
 import { JwtService } from '@nestjs/jwt';
-import { shapeIntoMongoObjectId } from '../../libs/config';
+import { Model, isValidObjectId } from 'mongoose';
+import { Member } from '../../libs/dto/member/member';
+import { MemberStatus, MemberType } from '../../libs/enums/member.enum';
+
+interface TokenClaims {
+	sub?: unknown;
+	_id?: unknown;
+	memberType?: unknown;
+}
 
 @Injectable()
 export class AuthService {
-
-    constructor(private jwtService: JwtService ) {}
-
-	public async hashPassword(memberPassword: string): Promise<string> {
-		const salt = await bcrypt.genSalt();
-		return await bcrypt.hash(memberPassword, salt);
+	constructor(
+		private readonly jwtService: JwtService,
+		@InjectModel('Member') private readonly memberModel: Model<Member>,
+	) {}
+	async hashPassword(password: string): Promise<string> {
+		return bcrypt.hash(password, await bcrypt.genSalt());
 	}
-
-	public async comparePasswords(password: string, hashedPassword: string): Promise<boolean> {
-		return await bcrypt.compare(password, hashedPassword);
+	comparePasswords(password: string, hashed: string): Promise<boolean> {
+		return bcrypt.compare(password, hashed);
 	}
-
-    public async createToken(member: Member): Promise<string> {
-        console.log('member:', member);
-        const payload: T = {};
-        Object.keys(member['_doc'] ? member['_doc'] : member).map((ele) => {
-            payload[`${ele}`] = member[`${ele}`];
-        });
-        delete payload.memberPassword;
-         console.log('payload:', payload);
-
-        return await this.jwtService.signAsync(payload);
-    }
-
-    public async verifyToken(token: string): Promise<Member> {
-        const member = await this.jwtService.verifyAsync(token);
-        member._id = shapeIntoMongoObjectId(member._id);
-        return member;
-    }
+	async createToken(member: Member): Promise<string> {
+		return this.jwtService.signAsync({ sub: member._id.toHexString() });
+	}
+	async verifyToken(token: string): Promise<Member> {
+		try {
+			const claims = await this.jwtService.verifyAsync<TokenClaims>(token);
+			const id = claims.sub ?? claims._id;
+			if (
+				typeof id !== 'string' ||
+				!isValidObjectId(id) ||
+				(claims.memberType !== undefined &&
+					(typeof claims.memberType !== 'string' || !Object.values<string>(MemberType).includes(claims.memberType)))
+			)
+				throw new Error('Invalid claims');
+			const member = await this.memberModel.findOne({ _id: id, memberStatus: MemberStatus.ACTIVE }).lean().exec();
+			if (!member || !Object.values(MemberType).includes(member.memberType)) throw new Error('Inactive account');
+			return member;
+		} catch {
+			throw new UnauthorizedException('Please sign in with an active account');
+		}
+	}
 }
-

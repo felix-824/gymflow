@@ -1,35 +1,39 @@
-// @ts-check
 import eslint from '@eslint/js';
-import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended';
+import parser from '@typescript-eslint/parser';
+import plugin from '@typescript-eslint/eslint-plugin';
 import globals from 'globals';
-import tseslint from 'typescript-eslint';
+import prettier from 'eslint-plugin-prettier/recommended';
 
-export default tseslint.config(
-  {
-    ignores: ['eslint.config.mjs'],
+// Use the installed parser/plugin directly; preserve the intended type-checked rule set.
+export default [
+ {
+  ignores: ['dist/**', 'node_modules/**', 'coverage/**'],
+ },
+ {
+  files: ['apps/**/*.ts'],
+  languageOptions: {
+   parser,
+   globals: { ...globals.node, ...globals.jest },
+   parserOptions: {
+    sourceType: 'module',
+    ecmaVersion: 'latest',
+    project: ['./tsconfig.json'],
+    tsconfigRootDir: process.cwd(),
+   },
   },
-  eslint.configs.recommended,
-  ...tseslint.configs.recommendedTypeChecked,
-  eslintPluginPrettierRecommended,
-  {
-    languageOptions: {
-      globals: {
-        ...globals.node,
-        ...globals.jest,
-      },
-      sourceType: 'commonjs',
-      parserOptions: {
-        projectService: true,
-        tsconfigRootDir: import.meta.dirname,
-      },
-    },
+  plugins: { '@typescript-eslint': plugin },
+  rules: {
+   ...eslint.configs.recommended.rules,
+   ...plugin.configs['eslint-recommended'].overrides[0].rules,
+   ...plugin.configs['recommended-type-checked'].rules,
+   '@typescript-eslint/no-explicit-any': 'off',
+   '@typescript-eslint/no-floating-promises': 'warn',
+   '@typescript-eslint/no-unsafe-argument': 'warn',
   },
-  {
-    rules: {
-      '@typescript-eslint/no-explicit-any': 'off',
-      '@typescript-eslint/no-floating-promises': 'warn',
-      '@typescript-eslint/no-unsafe-argument': 'warn',
-      "prettier/prettier": ["error", { endOfLine: "auto" }],
-    },
-  },
-);
+ },
+ {
+  ...prettier,
+  files: ['apps/**/*.ts'],
+  rules: { ...prettier.rules, 'prettier/prettier': ['error', { endOfLine: 'auto' }] },
+ },
+];

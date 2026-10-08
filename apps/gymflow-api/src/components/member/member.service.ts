@@ -1,12 +1,13 @@
-import { BadRequestException, HttpCode, Injectable, InternalServerErrorException } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, ObjectId } from 'mongoose';
+import { Model, Types } from 'mongoose';
+type ObjectId = Types.ObjectId;
 import { Member, Members } from '../../libs/dto/member/member';
-import { AgentsInquiry, LoginInput, MemberInput, MembersInquiry } from '../../libs/dto/member/member.input';
+import { TrainersInquiry, LoginInput, MemberInput, MembersInquiry } from '../../libs/dto/member/member.input';
 import { MemberStatus, MemberType } from '../../libs/enums/member.enum';
 import { Direction, Message } from '../../libs/enums/common.enum';
 import { AuthService } from '../auth/auth.service';
-import { MemberUpdate } from '../../libs/dto/member/member.update';
+import { MemberSelfUpdate, MemberUpdate } from '../../libs/dto/member/member.update';
 import { StatisticModifier, T } from '../../libs/types/common';
 import { ViewService } from '../view/view.service';
 import { ViewGroup } from '../../libs/enums/view.enum';
@@ -27,6 +28,9 @@ export class MemberService {
 	) {}
 
 	public async signup(input: MemberInput): Promise<Member> {
+		if (input.memberType != null && ![MemberType.USER, MemberType.TRAINER].includes(input.memberType))
+			throw new BadRequestException('Invalid signup role');
+		input.memberType ??= MemberType.USER;
 		input.memberPassword = await this.authService.hashPassword(input.memberPassword);
 		try {
 			const result = await this.memberModel.create(input);
@@ -39,7 +43,7 @@ export class MemberService {
 	}
 
 	public async login(input: LoginInput): Promise<Member> {
-		const { memberNick, memberPassword } = input;
+		const { memberNick } = input;
 
 		const response = await this.memberModel.findOne({ memberNick: memberNick }).select('+memberPassword').exec();
 
@@ -58,15 +62,26 @@ export class MemberService {
 		return response;
 	}
 
-	public async updateMember(memberId: ObjectId, input: MemberUpdate): Promise<Member> {
+	public async updateMember(memberId: ObjectId, input: MemberSelfUpdate): Promise<Member> {
+		const allowed = [
+			'memberPhone',
+			'memberNick',
+			'memberPassword',
+			'memberFullName',
+			'memberImage',
+			'memberAddress',
+			'memberDesc',
+		];
+		const safe: MemberSelfUpdate = Object.fromEntries(Object.entries(input).filter(([key]) => allowed.includes(key)));
+		if (safe.memberPassword) safe.memberPassword = await this.authService.hashPassword(safe.memberPassword);
 		const result = await this.memberModel //Member
 			.findOneAndUpdate(
 				{
 					_id: memberId,
 					memberStatus: MemberStatus.ACTIVE,
 				},
-				input,
-				{ new: true },
+				safe,
+				{ new: true, runValidators: true },
 			)
 			.exec();
 		if (!result) throw new InternalServerErrorException(Message.UPDATE_FAILED);
@@ -112,24 +127,21 @@ export class MemberService {
 		return result ? [{ followerId: followerId, followingId: followingId, myFollowing: true }] : [];
 	}
 
-	public async getAgents(memberId: ObjectId, input: AgentsInquiry): Promise<Members> {
+	public async getTrainers(memberId: ObjectId, input: TrainersInquiry): Promise<Members> {
 		const { text } = input.search;
-		const match: T = { memberType: MemberType.AGENT, memberStatus: MemberStatus.ACTIVE };
+		const match: T = { memberType: MemberType.TRAINER, memberStatus: MemberStatus.ACTIVE };
 		const sort: T = { [input?.sort ?? 'createdAt']: input?.direction ?? Direction.DESC };
 
 		if (text) match.memberNick = { $regex: new RegExp(text, 'i') };
 		console.log('match:', match);
 
 		const result = await this.memberModel
-			.aggregate([
+			.aggregate<Members>([
 				{ $match: match },
 				{ $sort: sort },
 				{
 					$facet: {
-						list: [{ $skip: (input.page - 1) * input.limit },
-							 { $limit: input.limit },
-							 lookupAuthMemberLiked(memberId),
-							],
+						list: [{ $skip: (input.page - 1) * input.limit }, { $limit: input.limit }, lookupAuthMemberLiked(memberId)],
 						metaCounter: [{ $count: 'total' }],
 					},
 				},
@@ -140,7 +152,7 @@ export class MemberService {
 		return result[0];
 	}
 
-	// Login memberning target memberga 
+	// Login memberning target memberga
 	// LIKE/UNLIKE bosishini boshqaradi
 	public async likeTargetMember(memberId: ObjectId, likeRefId: ObjectId): Promise<Member> {
 		const target = await this.memberModel.findOne({ _id: likeRefId, memberStatus: MemberStatus.ACTIVE }).exec();
@@ -172,7 +184,7 @@ export class MemberService {
 		console.log('match:', match);
 
 		const result = await this.memberModel
-			.aggregate([
+			.aggregate<Members>([
 				{ $match: match },
 				{ $sort: sort },
 				{
@@ -189,7 +201,14 @@ export class MemberService {
 	}
 
 	public async updateMemberByAdmin(input: MemberUpdate): Promise<Member> {
-		const result = await this.memberModel.findOneAndUpdate({ _id: input._id }, input, { new: true }).exec();
+		if (input.memberType !== undefined && !Object.values(MemberType).includes(input.memberType))
+			throw new BadRequestException('Invalid role');
+		if (input.memberStatus !== undefined && !Object.values(MemberStatus).includes(input.memberStatus))
+			throw new BadRequestException('Invalid status');
+		if (input.memberPassword) input.memberPassword = await this.authService.hashPassword(input.memberPassword);
+		const result = await this.memberModel
+			.findOneAndUpdate({ _id: input._id }, input, { new: true, runValidators: true })
+			.exec();
 		if (!result) throw new InternalServerErrorException(Message.UPDATE_FAILED);
 
 		return result;

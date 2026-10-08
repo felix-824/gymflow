@@ -1,21 +1,22 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
-import * as request from 'supertest';
-import { BatchModule } from '../src/batch.module';
+import request from 'supertest';
+import { BatchController } from '../src/batch.controller';
+import { BatchService } from '../src/batch.service';
 
-describe('GymFlow BATCH BatchController (e2e)', () => {
+// No DatabaseModule or ScheduleModule: smoke tests cannot start production jobs.
+describe('GymFlow batch greeting (isolated)', () => {
 	let app: INestApplication;
-
-	beforeEach(async () => {
-		const moduleFixture: TestingModule = await Test.createTestingModule({
-			imports: [BatchModule],
+	beforeAll(async () => {
+		const module = await Test.createTestingModule({
+			controllers: [BatchController],
+			providers: [{ provide: BatchService, useValue: { getHello: () => 'Welcome to GymFlow BATCH Server!' } }],
 		}).compile();
-
-		app = moduleFixture.createNestApplication();
+		app = module.createNestApplication();
 		await app.init();
 	});
-
-	it('/ (GET)', () => {
-		return request(app.getHttpServer()).get('/').expect(200).expect('Welcome to GymFlow BATCH Server!');
+	afterAll(async () => {
+		await app.close();
 	});
+	it('GET /', () => request(app.getHttpServer()).get('/').expect(200).expect('Welcome to GymFlow BATCH Server!'));
 });

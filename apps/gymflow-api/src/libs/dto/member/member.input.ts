@@ -1,7 +1,7 @@
 import { Field, InputType, Int } from '@nestjs/graphql';
 import { IsIn, IsNotEmpty, IsOptional, Length, Min } from 'class-validator';
 import { MemberAuthType, MemberStatus, MemberType } from '../../enums/member.enum';
-import { availableAgentSorts, availableMemberSorts } from '../../config';
+import { availableTrainerSorts, availableMemberSorts } from '../../config';
 import { Direction } from '../../enums/common.enum';
 
 @InputType()
@@ -21,6 +21,7 @@ export class MemberInput {
 	memberPhone: string;
 
 	@IsOptional()
+	@IsIn([MemberType.USER, MemberType.TRAINER])
 	@Field(() => MemberType, { nullable: true })
 	memberType?: MemberType;
 
@@ -43,14 +44,14 @@ export class LoginInput {
 }
 
 @InputType()
-class AISearch {
+class TrainerSearch {
 	@IsNotEmpty()
 	@Field(() => String, { nullable: true })
 	text?: string;
 }
 
 @InputType()
-export class AgentsInquiry {
+export class TrainersInquiry {
 	@IsOptional()
 	@Min(1)
 	@Field(() => Int)
@@ -62,7 +63,7 @@ export class AgentsInquiry {
 	limit: number;
 
 	@IsOptional()
-	@IsIn(availableAgentSorts)
+	@IsIn(availableTrainerSorts)
 	@Field(() => String, { nullable: true })
 	sort?: string;
 
@@ -71,23 +72,20 @@ export class AgentsInquiry {
 	direction?: Direction;
 
 	@IsNotEmpty()
-	@Field(() => AISearch)
-	search: AISearch;
+	@Field(() => TrainerSearch)
+	search: TrainerSearch;
 }
 
 //
 @InputType()
 class MISearch {
+	@IsOptional()
+	@Field(() => MemberStatus, { nullable: true })
+	memberStatus?: MemberStatus;
 
-  @IsOptional()
-  @Field(() => MemberStatus, { nullable: true })
-  memberStatus?: MemberStatus;
-
-  @IsOptional()
-  @Field(() => MemberType, { nullable: true })
-  memberType?: MemberType;
-
-
+	@IsOptional()
+	@Field(() => MemberType, { nullable: true })
+	memberType?: MemberType;
 
 	@IsOptional()
 	@Field(() => String, { nullable: true })
@@ -119,4 +117,3 @@ export class MembersInquiry {
 	@Field(() => MISearch)
 	search: MISearch;
 }
-

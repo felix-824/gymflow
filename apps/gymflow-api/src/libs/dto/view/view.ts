@@ -1,5 +1,6 @@
-import { Field, Int, ObjectType } from '@nestjs/graphql';
-import type { ObjectId } from 'mongoose';
+import { Field, ObjectType } from '@nestjs/graphql';
+import { Types } from 'mongoose';
+type ObjectId = Types.ObjectId;
 import { ViewGroup } from '../../enums/view.enum';
 
 @ObjectType()

@@ -1,26 +1,28 @@
-import { ObjectId } from 'bson';
+import { Types } from 'mongoose';
+import { BadRequestException } from '@nestjs/common';
+import { LikeGroup } from './enums/like.enum';
 
-export const availableAgentSorts = ['createdAt', 'updatedAt', 'memberLikes', 'memberViews', 'memberRank'];
+export const availableTrainerSorts = ['createdAt', 'updatedAt', 'memberLikes', 'memberViews', 'memberRank'];
 export const availableMemberSorts = ['createdAt', 'updatedAt', 'memberLikes', 'memberViews'];
 
-export const availableOptions = ['propertyBarter', 'propertyRent'];
-export const availablePropertySorts = [
+export const availableProgramSorts = [
 	'createdAt',
 	'updatedAt',
-	'propertyLikes',
-	'propertyViews',
-	'propertyRank',
-	'propertyPrice',
+	'programLikes',
+	'programViews',
+	'programRank',
+	'programPrice',
+	'programDuration',
+	'programCapacity',
 ];
 
 export const availableBoardArticleSorts = ['createdAt', 'updatedAt', 'articleLikes', 'articleViews'];
 
 export const availableCommentSorts = ['createdAt', 'updatedAt'];
 
-// IMAGE CONFIGURATION 
+// IMAGE CONFIGURATION
 import { v4 as uuidv4 } from 'uuid';
 import * as path from 'path';
-import { T } from './types/common';
 
 export const validMimeTypes = ['image/png', 'image/jpg', 'image/jpeg'];
 export const getSerialForImage = (filename: string) => {
@@ -28,13 +30,18 @@ export const getSerialForImage = (filename: string) => {
 	return uuidv4() + ext;
 };
 
-
-export const shapeIntoMongoObjectId = (target: any) => {
-    return typeof target === 'string' ? new ObjectId(target) : target;
+export const shapeIntoMongoObjectId = (target: unknown): Types.ObjectId => {
+	if (target instanceof Types.ObjectId) return target;
+	if (typeof target === 'string' && /^[a-fA-F0-9]{24}$/.test(target)) return new Types.ObjectId(target);
+	throw new BadRequestException('Invalid identifier');
 };
 
 // Login qilgan member ushbu targetga like bosgan yoki bosmaganini tekshiradi.
-export const lookupAuthMemberLiked = (memberId: T, targetRefId: string = '$_id') => {
+export const lookupAuthMemberLiked = (
+	memberId: Types.ObjectId | null,
+	targetRefId: string = '$_id',
+	group: LikeGroup = LikeGroup.MEMBER,
+) => {
 	return {
 		$lookup: {
 			from: 'likes',
@@ -47,11 +54,14 @@ export const lookupAuthMemberLiked = (memberId: T, targetRefId: string = '$_id')
 				{
 					$match: {
 						$expr: {
-							$and: 
-							//likes collectiondagi likeRefId hozirgi agentning IDsi bilan tengmi?
-							[{ $eq: ['$likeRefId', '$$localLikeRefId'] },
-							//likes ichidagi memberId login qilgan Farruxning IDsi bilan tengmi?
-						  { $eq: ['$memberId', '$$localMemberId'] }],  
+							$and:
+								//likes collectiondagi likeRefId hozirgi trainerning IDsi bilan tengmi?
+								[
+									{ $eq: ['$likeRefId', '$$localLikeRefId'] },
+									{ $eq: ['$likeGroup', group] },
+									//likes ichidagi memberId login qilgan Farruxning IDsi bilan tengmi?
+									{ $eq: ['$memberId', '$$localMemberId'] },
+								],
 						},
 					},
 				},
@@ -62,7 +72,7 @@ export const lookupAuthMemberLiked = (memberId: T, targetRefId: string = '$_id')
 						likeRefId: 1,
 						myFavorite: '$$localMyFavorite',
 					},
-				}, 
+				},
 			],
 			as: 'meLiked',
 		},
@@ -71,7 +81,7 @@ export const lookupAuthMemberLiked = (memberId: T, targetRefId: string = '$_id')
 
 // Login qilgan member boshqa memberni follow qilgan yoki qilmaganini tekshiradi.
 interface LookupAuthMemberFollowed {
-	followerId: T;
+	followerId: Types.ObjectId | null;
 	followingId: string;
 }
 
@@ -90,10 +100,7 @@ export const lookupAuthMemberFollowed = (input: LookupAuthMemberFollowed) => {
 				{
 					$match: {
 						$expr: {
-							$and: [
-								{ $eq: ['$followerId', '$$localFollowerId'] },
-								{ $eq: ['$followingId', '$$localFollowingId'] },
-							],
+							$and: [{ $eq: ['$followerId', '$$localFollowerId'] }, { $eq: ['$followingId', '$$localFollowingId'] }],
 						},
 					},
 				},
@@ -110,7 +117,6 @@ export const lookupAuthMemberFollowed = (input: LookupAuthMemberFollowed) => {
 		},
 	};
 };
-
 
 export const lookupMember = {
 	$lookup: {
@@ -132,7 +138,7 @@ export const lookupFollowingData = {
 	},
 };
 
-// Follower member ma'lumotlarini members collectiondan olib 
+// Follower member ma'lumotlarini members collectiondan olib
 // followerData'ga qo'shadi
 export const lookupFollowerData = {
 	$lookup: {
@@ -143,6 +149,5 @@ export const lookupFollowerData = {
 	},
 };
 
-// Favorite property egasining (member)
+// Favorite program egasining (member)
 // ma'lumotlarini members collectiondan olib keladi.
- 

@@ -1,16 +1,13 @@
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
+import { GqlExecutionContext } from '@nestjs/graphql';
+import { GraphQLAuthContext } from '../../../libs/types/auth-context';
+import { Member } from '../../../libs/dto/member/member';
 
-export const AuthMember = createParamDecorator((data: string, context: ExecutionContext | any) => {
-	let request: any;
-	if (context.contextType === 'graphql') {
-		request = context.getArgByIndex(2).req;
-		if (request.body.authMember) {
-			request.body.authMember.authorization = request.headers?.authorization;
-		}
-	} else request = context.switchToHttp().getRequest();
-
-	const member = request.body.authMember;
-
-	if (member) return data ? member?.[data] : member;
-	else return null;
-});
+export const AuthMember = createParamDecorator(
+	(data: keyof Member | undefined, context: ExecutionContext): Member | Member[keyof Member] | null => {
+		const req = GqlExecutionContext.create(context).getContext<GraphQLAuthContext>().req;
+		const member = req.body?.authMember;
+		if (!member) return null;
+		return data ? member[data] : member;
+	},
+);

@@ -28,11 +28,11 @@ const NotificationSchema = new Schema(
 
 		notificationDesc: {
 			type: String,
+			required: true,
 		},
 
 		authorId: {
 			type: Schema.Types.ObjectId,
-			required: true,
 			ref: 'Member',
 		},
 
@@ -42,10 +42,12 @@ const NotificationSchema = new Schema(
 			ref: 'Member',
 		},
 
-		propertyId: {
+		programId: {
 			type: Schema.Types.ObjectId,
-			ref: 'Property',
+			ref: 'Program',
 		},
+
+		reservationId: { type: Schema.Types.ObjectId, ref: 'Reservation' },
 
 		articleId: {
 			type: Schema.Types.ObjectId,

@@ -1,70 +1,33 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, ObjectId } from 'mongoose';
+import { Model, Types } from 'mongoose';
+type ObjectId = Types.ObjectId;
 import { View } from '../../libs/dto/view/view';
 import { ViewInput } from '../../libs/dto/view/view.input';
-import { T } from '../../libs/types/common';
-import { Properties } from '../../libs/dto/property/property';
-import { lookupVisit } from '../../libs/config';
 import { ViewGroup } from '../../libs/enums/view.enum';
-import { OrdinaryInquiry } from '../../libs/dto/property/property.input';
+import { OrdinaryInquiry } from '../../libs/dto/common/inquiry';
+import { Programs } from '../../libs/dto/program/program';
+import { isDuplicateKey } from '../../libs/types/database-error';
+import { savedProgramStages } from '../../libs/program.aggregation';
 
 @Injectable()
 export class ViewService {
-    constructor(@InjectModel('View') private readonly viewModel: Model<View>) {}
-    
-public async recordView(input: ViewInput): Promise<View | null> {
-    const viewExist = await this.checkViewExistence(input);
-    if (!viewExist) {
-        console.log('-New View Insert -');
-       return await this.viewModel.create(input);   
-    } else return null;
-
- }
-
- private async checkViewExistence(input: ViewInput): Promise<View | null> {
-    const { memberId, viewRefId } = input;
-    const search: T = {memberId: memberId, viewRefId: viewRefId };
-    return await this.viewModel.findOne(search).exec();
- }
-
-
- // Member oldin ko'rgan propertylarni views orqali topib, pagination bilan qaytaradi.
-public async getVisitedProperties(memberId: ObjectId, input: OrdinaryInquiry): Promise<Properties> {
-	const { page, limit } = input;
-	const match: T = { viewGroup: ViewGroup.PROPERTY, memberId: memberId };
-
-	const data: T = await this.viewModel
-		.aggregate([
-			{ $match: match },
-			{ $sort: { updatedAt: -1 } },
-			{
-				$lookup: {
-					from: 'properties',
-					localField: 'viewRefId',
-					foreignField: '_id',
-					as: 'visitedProperty',
-				},
-			},
-			{ $unwind: '$visitedProperty' },
-			{
-				$facet: {
-					list: [
-						{ $skip: (page - 1) * limit },
-						{ $limit: limit },
-						lookupVisit,
-						{ $unwind: '$visitedProperty.memberData' },
-					],
-					metaCounter: [{ $count: 'total' }],
-				},
-			},
-		])
-		.exec();
-
-	const result: Properties = { list: [], metaCounter: data[0].metaCounter };
-	result.list = data[0].list.map((ele) => ele.visitedProperty);
-
-	return result;
-}
-
+	constructor(@InjectModel('View') private readonly viewModel: Model<View>) {}
+	async recordView(input: ViewInput): Promise<View | null> {
+		try {
+			return await this.viewModel.create(input);
+		} catch (error) {
+			if (isDuplicateKey(error)) return null;
+			throw error;
+		}
+	}
+	async getVisitedPrograms(memberId: ObjectId, input: OrdinaryInquiry): Promise<Programs> {
+		const [result] = await this.viewModel
+			.aggregate<Programs>(savedProgramStages('view', memberId, input.page, input.limit))
+			.exec();
+		return result ?? { list: [], metaCounter: [] };
+	}
+	async removeProgramViews(programId: ObjectId): Promise<void> {
+		await this.viewModel.deleteMany({ viewGroup: ViewGroup.PROGRAM, viewRefId: programId }).exec();
+	}
 }

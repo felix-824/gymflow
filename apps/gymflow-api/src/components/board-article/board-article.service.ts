@@ -1,8 +1,13 @@
-import {BadRequestException,Injectable,InternalServerErrorException,} from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import type { Model, ObjectId } from 'mongoose';
+import { Model, Types } from 'mongoose';
+type ObjectId = Types.ObjectId;
 import { BoardArticle, BoardArticles } from '../../libs/dto/board-article/board-article';
-import { AllBoardArticlesInquiry, BoardArticleInput, BoardArticlesInquiry } from '../../libs/dto/board-article/board-article.input';
+import {
+	AllBoardArticlesInquiry,
+	BoardArticleInput,
+	BoardArticlesInquiry,
+} from '../../libs/dto/board-article/board-article.input';
 import { MemberService } from '../member/member.service';
 import { ViewService } from '../view/view.service';
 import { Direction, Message } from '../../libs/enums/common.enum';
@@ -27,10 +32,7 @@ export class BoardArticleService {
 	) {}
 
 	// Yangi board article yaratadi va memberArticles sonini 1 taga oshiradi.
-	public async createBoardArticle(
-		memberId: ObjectId,
-		input: BoardArticleInput,
-	): Promise<BoardArticle> {
+	public async createBoardArticle(memberId: ObjectId, input: BoardArticleInput): Promise<BoardArticle> {
 		input.memberId = memberId;
 
 		try {
@@ -49,48 +51,43 @@ export class BoardArticleService {
 		}
 	}
 
-    // Login memberning target article'ga 
+	// Login memberning target article'ga
 	// LIKE/UNLIKE bosishini boshqaradi
-public async likeTargetBoardArticle(memberId: ObjectId, likeRefId: ObjectId): Promise<BoardArticle> {
-	const target = await this.boardArticleModel
-		.findOne({ _id: likeRefId, articleStatus: BoardArticleStatus.ACTIVE })
-		.exec();
+	public async likeTargetBoardArticle(memberId: ObjectId, likeRefId: ObjectId): Promise<BoardArticle> {
+		const target = await this.boardArticleModel
+			.findOne({ _id: likeRefId, articleStatus: BoardArticleStatus.ACTIVE })
+			.exec();
 
-	if (!target) throw new InternalServerErrorException(Message.NO_DATA_FOUND);
+		if (!target) throw new InternalServerErrorException(Message.NO_DATA_FOUND);
 
-	const input: LikeInput = {
-		memberId: memberId,
-		likeRefId: likeRefId,
-		likeGroup: LikeGroup.ARTICLE,
-	};
+		const input: LikeInput = {
+			memberId: memberId,
+			likeRefId: likeRefId,
+			likeGroup: LikeGroup.ARTICLE,
+		};
 
-	const modifier: number = await this.likeService.toggleLike(input);
+		const modifier: number = await this.likeService.toggleLike(input);
 
-	const result = await this.boardArticleStatsEditor({
-		_id: likeRefId,
-		targetKey: 'articleLikes',
-		modifier: modifier,
-	});
+		const result = await this.boardArticleStatsEditor({
+			_id: likeRefId,
+			targetKey: 'articleLikes',
+			modifier: modifier,
+		});
 
-	if (!result) throw new InternalServerErrorException(Message.SOMETHING_WENT_WRONG);
+		if (!result) throw new InternalServerErrorException(Message.SOMETHING_WENT_WRONG);
 
-	return result;
-}    
-
+		return result;
+	}
 
 	// Bitta ACTIVE article'ni ID orqali oladi,
-    //  view'ni hisoblaydi va muallif ma'lumotini qo‘shadi.
-	public async getBoardArticle(
-		memberId: ObjectId,
-		articleId: ObjectId,
-	): Promise<BoardArticle> {
+	//  view'ni hisoblaydi va muallif ma'lumotini qo‘shadi.
+	public async getBoardArticle(memberId: ObjectId, articleId: ObjectId): Promise<BoardArticle> {
 		const search: T = {
 			_id: articleId,
 			articleStatus: BoardArticleStatus.ACTIVE,
 		};
 
-		const targetBoardArticle: BoardArticle | null =
-			await this.boardArticleModel.findOne(search).lean().exec();
+		const targetBoardArticle: BoardArticle | null = await this.boardArticleModel.findOne(search).lean().exec();
 
 		if (!targetBoardArticle) {
 			throw new InternalServerErrorException(Message.NO_DATA_FOUND);
@@ -114,233 +111,211 @@ public async likeTargetBoardArticle(memberId: ObjectId, likeRefId: ObjectId): Pr
 
 				targetBoardArticle.articleViews++;
 
-                console.log('after articleViews =>', targetBoardArticle.articleViews);
+				console.log('after articleViews =>', targetBoardArticle.articleViews);
 			}
 
 			// meLiked
-		 const likeInput = { memberId: memberId, likeRefId: articleId, likeGroup: LikeGroup.ARTICLE };
-		 targetBoardArticle.meLiked = await this.likeService.checkLikeExistence(likeInput)	
+			const likeInput = { memberId: memberId, likeRefId: articleId, likeGroup: LikeGroup.ARTICLE };
+			targetBoardArticle.meLiked = await this.likeService.checkLikeExistence(likeInput);
 		}
 
-		targetBoardArticle.memberData = await this.memberService.getMember(
-			null,
-			targetBoardArticle.memberId,
-		);
+		targetBoardArticle.memberData = await this.memberService.getMember(null, targetBoardArticle.memberId);
 
 		return targetBoardArticle;
 	}
 
-// Memberga tegishli ACTIVE article'ni yangilaydi,
+	// Memberga tegishli ACTIVE article'ni yangilaydi,
 
-//  DELETE bo‘lsa memberArticles sonini kamaytiradi.
-    public async updateBoardArticle(
-        memberId: ObjectId,input: BoardArticleUpdate,): Promise<BoardArticle> {
+	//  DELETE bo‘lsa memberArticles sonini kamaytiradi.
+	public async updateBoardArticle(memberId: ObjectId, input: BoardArticleUpdate): Promise<BoardArticle> {
+		const { _id, articleStatus } = input;
 
-	const { _id, articleStatus } = input;
+		const result = await this.boardArticleModel
+			.findOneAndUpdate(
+				{
+					_id: _id,
+					memberId: memberId,
+					articleStatus: BoardArticleStatus.ACTIVE,
+				},
+				input,
+				{
+					new: true,
+				},
+			)
+			.exec();
 
-	const result = await this.boardArticleModel
-		.findOneAndUpdate(
-			{
-				_id: _id,
-				memberId: memberId,
-				articleStatus: BoardArticleStatus.ACTIVE,
-			},
-			input,
-			{
-				new: true,
-			},
-		)
-		.exec();
+		if (!result) {
+			throw new InternalServerErrorException(Message.UPDATE_FAILED);
+		}
 
-	if (!result) {
-		throw new InternalServerErrorException(Message.UPDATE_FAILED);
+		if (articleStatus === BoardArticleStatus.DELETE) {
+			await this.memberService.memberStatsEditor({
+				_id: memberId,
+				targetKey: 'memberArticles',
+				modifier: -1,
+			});
+		}
+
+		return result;
 	}
 
-	if (articleStatus === BoardArticleStatus.DELETE) {
-		await this.memberService.memberStatsEditor({
-			_id: memberId,
-			targetKey: 'memberArticles',
-			modifier: -1,
-		});
+	// ACTIVE board article'larni filter, search, sort va pagination bilan
+	//  olib keladi.
+	public async getBoardArticles(memberId: ObjectId, input: BoardArticlesInquiry): Promise<BoardArticles> {
+		const { articleCategory, text } = input.search;
+		const match: T = { articleStatus: BoardArticleStatus.ACTIVE };
+
+		const sort: T = { [input?.sort ?? 'createdAt']: input?.direction ?? Direction.DESC };
+
+		if (articleCategory) {
+			match.articleCategory = articleCategory;
+		}
+
+		if (text) {
+			match.articleTitle = {
+				$regex: new RegExp(text, 'i'),
+			};
+		}
+
+		if (input.search?.memberId) {
+			match.memberId = shapeIntoMongoObjectId(input.search.memberId);
+		}
+
+		console.log('match:', match);
+
+		const result = await this.boardArticleModel
+			.aggregate<BoardArticles>([
+				{ $match: match },
+				{ $sort: sort },
+				{
+					$facet: {
+						list: [
+							{ $skip: (input.page - 1) * input.limit },
+							{ $limit: input.limit },
+							lookupAuthMemberLiked(memberId, '$_id', LikeGroup.ARTICLE),
+							// meLiked
+							lookupMember,
+							{ $unwind: '$memberData' },
+						],
+						metaCounter: [{ $count: 'total' }],
+					},
+				},
+			])
+			.exec();
+
+		if (!result.length) {
+			throw new InternalServerErrorException(Message.NO_DATA_FOUND);
+		}
+
+		return result[0];
 	}
 
-	return result;
-}
+	// Admin barcha board article'larni status va kategoriya bo‘yicha
+	//  filter qilib, pagination bilan olib keladi.
+	public async getAllBoardArticlesByAdmin(input: AllBoardArticlesInquiry): Promise<BoardArticles> {
+		const { articleStatus, articleCategory } = input.search;
 
-// ACTIVE board article'larni filter, search, sort va pagination bilan
-//  olib keladi.
-public async getBoardArticles(
-	memberId: ObjectId,
-	input: BoardArticlesInquiry,
-): Promise<BoardArticles> {
+		const match: T = {};
 
-	const { articleCategory, text } = input.search;
-    const match: T = {	articleStatus: BoardArticleStatus.ACTIVE};
-
-	const sort: T = {[input?.sort ?? 'createdAt']: input?.direction ?? Direction.DESC};
-     
-	if (articleCategory) {
-		match.articleCategory = articleCategory;
-	}
-
-	if (text) {
-		match.articleTitle = {
-			$regex: new RegExp(text, 'i'),
+		const sort: T = {
+			[input?.sort ?? 'createdAt']: input?.direction ?? Direction.DESC,
 		};
-	}
 
-	if (input.search?.memberId) {
-		match.memberId = shapeIntoMongoObjectId(input.search.memberId);
-	}
+		if (articleStatus) {
+			match.articleStatus = articleStatus;
+		}
 
-	console.log('match:', match);
+		if (articleCategory) {
+			match.articleCategory = articleCategory;
+		}
 
-	const result = await this.boardArticleModel
-		.aggregate([
-			{ $match: match },
-			{ $sort: sort },
-			{
-				$facet: {
-					list: [
-						{$skip: (input.page - 1) * input.limit},
-						{$limit: input.limit},
-                        lookupAuthMemberLiked(memberId),
-						// meLiked
-						lookupMember,
-						{$unwind: '$memberData'},
-				    	],
-					     metaCounter: [{$count: 'total'},
-					],
+		const result = await this.boardArticleModel
+			.aggregate<BoardArticles>([
+				{ $match: match },
+				{ $sort: sort },
+				{
+					$facet: {
+						list: [
+							{
+								$skip: (input.page - 1) * input.limit,
+							},
+							{
+								$limit: input.limit,
+							},
+							lookupMember,
+							{
+								$unwind: '$memberData',
+							},
+						],
+
+						metaCounter: [
+							{
+								$count: 'total',
+							},
+						],
+					},
 				},
-			},
-		])
-		.exec();
+			])
+			.exec();
 
-	if (!result.length) {
-		throw new InternalServerErrorException(Message.NO_DATA_FOUND);
+		if (!result.length) {
+			throw new InternalServerErrorException(Message.NO_DATA_FOUND);
+		}
+
+		return result[0];
 	}
 
-	return result[0];
-  }
+	// Admin ACTIVE board article'ni yangilaydi,
+	//  DELETE qilinsa memberArticles sonini 1 taga kamaytiradi.
+	public async updateBoardArticleByAdmin(input: BoardArticleUpdate): Promise<BoardArticle> {
+		const { _id, articleStatus } = input;
 
-
-  // Admin barcha board article'larni status va kategoriya bo‘yicha
-  //  filter qilib, pagination bilan olib keladi.
-public async getAllBoardArticlesByAdmin(
-	input: AllBoardArticlesInquiry,
-): Promise<BoardArticles> {
-	const { articleStatus, articleCategory } = input.search;
-
-	const match: T = {};
-
-	const sort: T = {
-		[input?.sort ?? 'createdAt']: input?.direction ?? Direction.DESC,
-	};
-
-	if (articleStatus) {
-		match.articleStatus = articleStatus;
-	}
-
-	if (articleCategory) {
-		match.articleCategory = articleCategory;
-	}
-
-	const result = await this.boardArticleModel
-		.aggregate([
-			{ $match: match },
-			{ $sort: sort },
-			{
-				$facet: {
-					list: [
-						{
-							$skip: (input.page - 1) * input.limit,
-						},
-						{
-							$limit: input.limit,
-						},
-						lookupMember,
-						{
-							$unwind: '$memberData',
-						},
-					],
-
-					metaCounter: [
-						{
-							$count: 'total',
-						},
-					],
+		const result = await this.boardArticleModel
+			.findOneAndUpdate(
+				{
+					_id: _id,
+					articleStatus: BoardArticleStatus.ACTIVE,
 				},
-			},
-		])
-		.exec();
+				input,
+				{
+					new: true,
+				},
+			)
+			.exec();
 
-	if (!result.length) {
-		throw new InternalServerErrorException(Message.NO_DATA_FOUND);
+		if (!result) {
+			throw new InternalServerErrorException(Message.UPDATE_FAILED);
+		}
+
+		if (articleStatus === BoardArticleStatus.DELETE) {
+			await this.memberService.memberStatsEditor({
+				_id: result.memberId,
+				targetKey: 'memberArticles',
+				modifier: -1,
+			});
+		}
+
+		return result;
 	}
 
-	return result[0];
-}
+	// DELETE statusdagi board article'ni database butunlay o‘chiradi.
+	public async removeBoardArticleByAdmin(articleId: ObjectId): Promise<BoardArticle> {
+		const search: T = {
+			_id: articleId,
+			articleStatus: BoardArticleStatus.DELETE,
+		};
 
+		const result = await this.boardArticleModel.findOneAndDelete(search).exec();
 
-// Admin ACTIVE board article'ni yangilaydi,
-//  DELETE qilinsa memberArticles sonini 1 taga kamaytiradi.
-public async updateBoardArticleByAdmin(
-	input: BoardArticleUpdate,
-): Promise<BoardArticle> {
-	const { _id, articleStatus } = input;
+		if (!result) {
+			throw new InternalServerErrorException(Message.REMOVE_FAILED);
+		}
 
-	const result = await this.boardArticleModel
-		.findOneAndUpdate(
-			{
-				_id: _id,
-				articleStatus: BoardArticleStatus.ACTIVE,
-			},
-			input,
-			{
-				new: true,
-			},
-		)
-		.exec();
-
-	if (!result) {
-		throw new InternalServerErrorException(Message.UPDATE_FAILED);
+		return result;
 	}
-
-	if (articleStatus === BoardArticleStatus.DELETE) {
-		await this.memberService.memberStatsEditor({
-			_id: result.memberId,
-			targetKey: 'memberArticles',
-			modifier: -1,
-		});
-	}
-
-	return result;
-   }
-
-   // DELETE statusdagi board article'ni database butunlay o‘chiradi.
-public async removeBoardArticleByAdmin(articleId: ObjectId): Promise<BoardArticle> {
-	const search: T = {
-		_id: articleId,
-		articleStatus: BoardArticleStatus.DELETE,
-	};
-
-	const result = await this.boardArticleModel
-		.findOneAndDelete(search)
-		.exec();
-
-	if (!result) {
-		throw new InternalServerErrorException(Message.REMOVE_FAILED);
-	}
-
-	return result;
-}
-
-
 
 	// Article statistik qiymatini oshiradi yoki kamaytiradi.
-	public async boardArticleStatsEditor(
-		input: StatisticModifier,
-	): Promise<BoardArticle | null> {
+	public async boardArticleStatsEditor(input: StatisticModifier): Promise<BoardArticle | null> {
 		const { _id, targetKey, modifier } = input;
 
 		return await this.boardArticleModel

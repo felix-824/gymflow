@@ -5,17 +5,17 @@ import { ConfigModule } from '@nestjs/config';
 import { DatabaseModule } from './database/database.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { MongooseModule } from '@nestjs/mongoose';
-import PropertySchema from 'apps/gymflow-api/src/schemas/Property.model';
+import ProgramSchema from 'apps/gymflow-api/src/schemas/Program.model';
 import MemberSchema from 'apps/gymflow-api/src/schemas/Member.model';
 
 @Module({
 	imports: [
-    ConfigModule.forRoot(),
-    DatabaseModule,
-    ScheduleModule.forRoot(),
-    MongooseModule.forFeature([{ name: 'Property', schema: PropertySchema }]),
-    MongooseModule.forFeature([{ name: 'Member', schema: MemberSchema }]),
-  ],
+		ConfigModule.forRoot(),
+		DatabaseModule,
+		ScheduleModule.forRoot(),
+		MongooseModule.forFeature([{ name: 'Program', schema: ProgramSchema }]),
+		MongooseModule.forFeature([{ name: 'Member', schema: MemberSchema }]),
+	],
 	controllers: [BatchController],
 	providers: [BatchService],
 })

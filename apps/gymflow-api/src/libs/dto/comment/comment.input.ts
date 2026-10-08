@@ -1,16 +1,12 @@
 import { Field, InputType, Int } from '@nestjs/graphql';
 import { IsIn, IsNotEmpty, IsOptional, Length, Min } from 'class-validator';
-import type { ObjectId } from 'mongoose';
-import { CommentGroup } from '../../enums/comment.enum';
+import { Types } from 'mongoose';
+type ObjectId = Types.ObjectId;
 import { Direction } from '../../enums/common.enum';
 import { availableCommentSorts } from '../../config';
 
 @InputType()
 export class CommentInput {
-	@IsNotEmpty()
-	@Field(() => CommentGroup)
-	commentGroup: CommentGroup;
-
 	@IsNotEmpty()
 	@Length(1, 100)
 	@Field(() => String)
@@ -18,7 +14,7 @@ export class CommentInput {
 
 	@IsNotEmpty()
 	@Field(() => String)
-	commentRefId: ObjectId;
+	articleId: ObjectId;
 
 	memberId?: ObjectId;
 }
@@ -27,7 +23,7 @@ export class CommentInput {
 class CISearch {
 	@IsNotEmpty()
 	@Field(() => String)
-	commentRefId: ObjectId;
+	articleId: ObjectId;
 }
 
 @InputType()

@@ -56,3 +56,19 @@ node node_modules/eslint/bin/eslint.js --config eslint.config.mjs "apps/**/*.ts"
 ```
 
 The npm lint script uses auto-fixing; use the explicit non-fixing command for reviews.
+
+
+## Coding Style and Implementation Consistency
+
+- Follow the original Nestar backend coding style.
+- Inspect the corresponding Nestar implementation before making changes.
+- Preserve the existing NestJS monorepo architecture.
+- Maintain established service, resolver, DTO, and Mongoose patterns.
+- Follow existing TypeScript naming and formatting conventions.
+- Preserve authentication, authorization, and error-handling patterns.
+- Use async/await and try/catch consistently with the original code.
+- Avoid redundant try/catch blocks that only rethrow errors.
+- Do not introduce unnecessary dependencies or architectural changes.
+- Make small, incremental changes.
+- Run typecheck after each implementation phase.
+- Do not modify unrelated files.

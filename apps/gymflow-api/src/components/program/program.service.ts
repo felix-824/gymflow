@@ -48,10 +48,12 @@ export class ProgramService {
 		private readonly likeService: LikeService,
 	) {}
 
-	async createProgram(memberId: ObjectId, input: ProgramInput): Promise<Program> {
+	public async createProgram(memberId: ObjectId, input: ProgramInput): Promise<Program> {
 		const owner = await this.memberService.getMember(null, memberId);
+
 		if (owner.memberType !== MemberType.TRAINER || owner.memberStatus !== MemberStatus.ACTIVE)
 			throw new BadRequestException('An active trainer must own the program');
+
 		const fields = this.pickFields(input);
 		assertProgram(fields as ProgramInput);
 		const result = await this.programModel.create({ ...fields, memberId, programStatus: ProgramStatus.ACTIVE });

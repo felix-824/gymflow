@@ -17,6 +17,7 @@ export class RolesGuard implements CanActivate {
 		const token = /^Bearer (\S+)$/i.exec(req.headers.authorization ?? '')?.[1];
 		if (!token) throw new ForbiddenException('Authentication required');
 		const member = await this.authService.verifyToken(token);
+
 		if (!roles.includes(member.memberType)) throw new ForbiddenException('Role not permitted');
 		req.body ??= {};
 		req.body.authMember = member;

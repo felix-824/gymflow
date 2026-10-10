@@ -6,7 +6,6 @@ import {graphqlUploadExpress} from "graphql-upload";
 import * as express from 'express';
 import { WsAdapter } from '@nestjs/platform-ws';
 
-//GLOBAL 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 

@@ -1,3 +1,41 @@
+## Frontend migration — October 10, 2026 (Asia/Seoul)
+
+Implemented the approved nestar-next → gymflow-next frontend migration in the sibling gymflow-next repository. Changes remain uncommitted. This section supersedes earlier statements that the frontend has not been inspected or migrated.
+
+### Implemented
+
+- Preserved Next.js 14 Pages Router, React 18, Apollo Client/reactive variables, MUI, SCSS, next-i18next, layout HOCs and the existing query/onCompleted/local-state and async handler patterns. Existing Nestar counterparts were inspected before adaptation. No dependency versions, lockfiles or environment values were changed.
+- Added exact Program enums, input/update/inquiry interfaces and whitelisted form payloads. Migrated Property/Agent GraphQL operations, nested Member counters, cards and consumers to Program/TRAINER. Removed obsolete domain types and unsupported program/trainer reviews.
+- Public routes are /program, /program/detail?id=..., /trainer and /trainer/detail?trainerId=.... Catalog filters use supported type/category/location/price/name fields; URL input is parsed defensively, sort fields are bounded, pagination resets on filter changes, and like refetches preserve context. Home sections use likes/views/rank.
+- Restored authentication from Member mutation results and JWT sub → checkAuth → getMember. Deduplicated restoration; delayed cabinet/admin guards; reset invalid/expired/blocked sessions and private Apollo cache; retained sessions on ordinary ownership/role denial. Applied current server roles and protected against stale restoration replacing a different session. Signup exposes USER/TRAINER; self-profile updates use MemberSelfUpdate.
+- Trainer management remains in /mypage (myPrograms/addProgram, programId). ACTIVE/PAUSED lists, pause/resume, terminal soft-delete, edit context across navigation and paused-program reload via getTrainerPrograms are implemented. Forms validate free/integer pricing, positive duration/capacity, PT capacity 1, ONLINE pairing, bounded text, offline address and required images; pending submissions are locked; conflict responses refetch latest values for manual review.
+- Program multipart uploads use target program and dynamic operations/map entries for the selected file count, preserving the five-image limit. GraphQL upload failures retain current images. Member/article upload paths were preserved with response checks. Favorites/history render Program cards and adjust invalid pages; community comments use articleId.
+- Admin programs moved to /_admin/programs, with ACTIVE/PAUSED/DELETE visibility, terminal deletion and hard-delete offered only for DELETE. User roles/counters use TRAINER/memberPrograms. GymFlow branding, metadata, navigation, marketing copy and en/kr/ru translations were updated; existing palette/typography and folder architecture remain.
+- Added dependency-free GraphQL/schema checking and migration unit/DOM checks using installed packages, plus a disposable integration runner using the sibling backend's existing development dependencies.
+
+### Validation executed
+
+| Check | Result |
+| --- | --- |
+| Yarn no-emit TypeScript after implementation phases | PASS; final exit 0. The pre-existing Teditor createBoardArticle typo was fixed during migration. |
+| yarn check:graphql | PASS: 40 frontend GraphQL documents, including gql() and inline multipart documents, validated against http://localhost:3007/graphql. Schema introspection only. |
+| yarn test:migration | PASS: 30 URL/form/payload/auth/DOM checks, including zero-price display, malformed input, restore deduplication, expired/blocked/network sessions, changed role, stale restoration, PAUSED edit context, ONLINE/PT transitions, failed upload retention, conflict refetch and duplicate-submit locking. |
+| yarn test:integration | PASS: 9 groups against an owned disposable MongoDB/Nest server using actual frontend documents. Covers signup/login/profile, numeric/domain validation, USER/TRAINER/ADMIN guards, ownership, public filters/sorting/pagination/trainers, likes/favorites/history, PAUSED editing/resume, article comments/likes/follow, actual 1/3/5-file and member/article multipart uploads, admin terminal soft/hard-delete, changed roles, blocked accounts and expired tokens. |
+| yarn build | PASS: all 72 localized/static pages generated; new Program/Trainer/admin routes present. |
+| yarn lint --no-cache (default Pages coverage; also run by build) | PASS with existing image/link/hook warnings. |
+| yarn lint --no-cache --dir libs --dir apollo --quiet | FAIL: four pre-existing errors in unchanged libs/components/common/ScrollControls.tsx (three missing display names, one ReactDOM.render deprecation). No remaining errors in migrated files. Do not report repository-wide lint as passing. |
+| Runtime legacy API/domain-field scan and literal static asset paths | PASS: no old Property/Agent API names, AGENT/SOLD or unsupported real-estate payload fields; literal asset references resolve. Existing asset filenames may retain historical names. |
+| git diff --check | PASS. The user's pre-existing AGENTS.md change was preserved. |
+| Desktop/mobile visual and real-browser navigation/session checks | NOT VERIFIED: browser inventory was empty, in-app browser unavailable, native Computer Use pipe unavailable. DOM form checks are not a visual-browser verification. |
+
+The integration runner never imports AppModule, DatabaseModule or ScheduleModule and never reads an application database URI. It starts its own loopback MongoDB, initializes indexes, uses an isolated Nest module and test JWT key, writes uploads under an owned OS temporary directory, then closes the application/server and removes only that directory. It reuses the cached MongoDB 8.2.6 binary at gymflow/.tmp/mongodb-binaries; automatic downloads are disabled. No mutation or upload was sent to the running application backend.
+
+Existing mobile placeholders remain within the approved mobile scope. Booking, reservations, schedules, reviews, payments and notification delivery are still deferred. No backend contract extension, application-data migration, deployment or commit was performed.
+
+Frontend commands: yarn tsc --noEmit --incremental false; yarn check:graphql; yarn test:migration; yarn test:integration; yarn lint --no-cache; yarn build.
+
+---
+
 # Completed tasks and validation evidence
 
 ## Continuation completed - October 8, 2026 (Asia/Seoul)

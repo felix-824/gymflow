@@ -231,3 +231,28 @@ The existing npm lint script includes auto-fixing; it was not used for the read-
 - **Not verified:** frontend paths/components, future GraphQL signatures, live data, and deployment infrastructure.
 
 Related: [Backend migration](BACKEND_MIGRATION.md), [Decisions](DECISIONS.md), [Next steps](NEXT_STEPS.md).
+
+
+## Home glass surfaces and subtle motion - October 11, 2026 (Asia/Seoul)
+
+Implemented the approved Home navbar/header-search refinement in the sibling gymflow-next frontend. Applied the swiftui-liquid-glass skill's visual principles as SCSS for the existing Next.js website, rather than native SwiftUI APIs, and used the already installed Framer Motion dependency following framer-motion-animator.
+
+### Implemented
+
+- Home-only navbar treatment uses router.pathname === '/', retaining the full-width fixed layout, 87 px height, existing logo size, links and account/language controls. Added a dark translucent surface with 16 px blur, subtle border and shadow, and a denser surface after the existing 50 px scroll threshold. Added an opaque fallback when backdrop-filter is unsupported.
+- Header-search retains its layout and the Location, Program Type, Category and coral Search controls. Added a 20 px blurred glass panel, inset highlights, readable light dropdown surfaces and a matching menu surface. No logo hover background, glow or shadow was added. Fiber assets/animation and mobile feature coverage remain unchanged.
+- Added SSR-visible, post-mount navbar content entrance (opacity and -6 px to 0, 320 ms), search entrance (opacity only, 400 ms), navigation underline transitions and Search hover/press gestures (y -1 px / scale 0.98, spring stiffness 350, damping 28). The fixed navbar root is not transformed. Reduced-motion disables entrance/gesture animations and dropdown transitions; normal dropdown enter/exit durations are 140/100 ms.
+- Moved the existing navbar scroll listener into an effect with passive registration and cleanup to avoid accumulating listeners on rerenders. Preserved the original threshold and state behavior.
+- Search handlers, multi-select values, query input routing, immediate close after selection, MUI focus/portal behavior and disableScrollLock remain intact. Full catalog filters and non-Home navbar use their original non-motion components. No GraphQL, auth, backend, public interface, package manifest or lockfile changes.
+
+### Validation
+
+- Yarn no-emit TypeScript passed after both phases and after the SSR entrance adjustment.
+- Targeted non-fixing lint passed for Top.tsx and program/Filter.tsx. Top retains 20 pre-existing link/image warnings; Filter has no lint findings. Repository-wide lint is not claimed.
+- Full desktop SCSS compilation and git diff --check passed.
+- yarn test:migration passed all 30 existing migration unit/DOM checks.
+- Temporary DOM checks with real MUI and Framer Motion passed in normal and reduced-motion modes: entrance execution versus reduced-motion visibility; all three dropdowns; multiple location selection; immediate close; unchanged body overflow/padding; Escape, backdrop dismissal and keyboard opening; exact /program query input; original full catalog filter; guest/member navigation, scroll threshold and profile/logout menu; non-Home navbar scope. Language menu locale storage/current-route navigation was also verified. Router, authentication/member state and two icon exports were mocked; no application-backend writes were performed. JSDOM emits an expected anchorEl geometry warning because it does not implement layout. The temporary harness is outside the repository.
+- Final yarn build passed and generated all 72 pages. Existing page lint warnings and the outdated Browserslist database notice remain.
+- Real-browser visual/geometry checks were NOT VERIFIED: available app/browser inventory was empty. DOM checks do not establish navbar pixel-coordinate stability, glass rendering/contrast over actual images, long-translation layout, mobile appearance or low-end-device animation performance.
+
+Frontend commits: 2035bb9 (feat: refine home glass surfaces), ea36a9a (feat: add subtle home animations). No deployment or GitHub push was performed.

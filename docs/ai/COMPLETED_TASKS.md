@@ -256,3 +256,30 @@ Implemented the approved Home navbar/header-search refinement in the sibling gym
 - Real-browser visual/geometry checks were NOT VERIFIED: available app/browser inventory was empty. DOM checks do not establish navbar pixel-coordinate stability, glass rendering/contrast over actual images, long-translation layout, mobile appearance or low-end-device animation performance.
 
 Frontend commits: 2035bb9 (feat: refine home glass surfaces), ea36a9a (feat: add subtle home animations). No deployment or GitHub push was performed.
+
+## Home Trend Programs card refinement - October 11, 2026 (Asia/Seoul)
+
+Implemented the approved trend-programs-only design update in the sibling gymflow-next frontend, applying the shadcn-ui skill's Card, Badge and Button principles through the existing MUI/SCSS stack. No shadcn/Tailwind installation or dependency changes.
+
+### Implemented
+
+- Replaced duplicate mobile/desktop card markup with one responsive Program card: white surface, warm neutral palette, coral accents, 20 px corners, subtle border/shadow and a 190 px cropped image. Category badge and a separate 40 px like button sit over the image.
+- Added translated training type/category/location, two-line title and optional two-line description, duration/capacity metadata, formatted KRW/session pricing (including zero), and noninteractive view/like counters. ONLINE uses the translated online location.
+- Image/title use keyboard-accessible Next.js detail links with the existing /program/detail?id=... route. Like keeps the existing handler and adds translated accessible naming, aria-pressed and a visible focus outline. Missing/failed images use a neutral fitness icon; changing the image URL can recover from failure.
+- Preserved 300 px desktop cards and 98% mobile slides. Shared scoped SCSS replaces old fixed-height trend rules and unused options selectors, allowing content-driven section/carousel height and equal-height slides. Hover lifts by 3 px only for hover-capable devices without reduced-motion preference.
+- Converted existing Swiper previous/next controls into labeled keyboard-focusable MUI buttons without changing the navigation selectors. Localized the trend heading, subtitle and empty state in en/kr/ru.
+- Apollo documents, query/mutation patterns, programLikes/DESC sorting, same-input like refetch, interfaces and other sections/pages remain unchanged. No property-specific elements remain in the modified trend components/styles; unrelated legacy banners/assets were outside the approved scope.
+
+### Validation and limitations
+
+- Baseline and post-change yarn tsc --noEmit --incremental false are BLOCKED by the pre-existing untracked skills/shadcn-ui/examples files: missing shadcn aliases/packages and implicit-any diagnostics. Those user files and tsconfig.json were not changed.
+- An application-only TypeScript check passed using the existing tsconfig with skill directories excluded in memory; no configuration was written.
+- Targeted non-fixing lint passed for TrendProgramCard.tsx and TrendPrograms.tsx with no warnings/errors.
+- Full desktop and mobile SCSS compilation passed; all new en/kr/ru translation keys and UTF-8 text were checked. git diff --check and staged diff checks passed.
+- yarn test:migration passed all 30 existing migration unit/DOM checks.
+- Temporary JSDOM checks with real React/MUI/Swiper and i18next passed: three locales, readable enum labels/units, zero and maximum valid price, detail hrefs, separate like control, broken/missing images and image replacement, blank description, ONLINE location, guest like rejection, user like/unlike, same-input refetch and updated counts/state, real Swiper next/previous behavior with emulated dimensions, mobile branch and empty results. Router link rendering, Apollo/member state and alerts were mocked. No application-backend mutations were made.
+- yarn build was attempted and is BLOCKED at the same pre-existing skills/shadcn-ui/examples/auth-layout.tsx missing @/components/ui/button import. Existing unrelated page lint warnings also remain. A successful production build is not claimed.
+- Real-browser visual/layout, touch interaction, keyboard activation in a browser and screen-reader checks were NOT VERIFIED: available app/browser inventory was empty. DOM checks and SCSS compilation do not establish pixel-level rendering, actual line clipping or visual reduced-motion behavior.
+- Temporary checks live outside the repository. User-added skill files and skills-lock.json changes were preserved and excluded from the commit.
+
+Frontend commit: a78c910 (feat: refine trend program cards). No GitHub push or deployment.

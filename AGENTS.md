@@ -72,3 +72,21 @@ The npm lint script uses auto-fixing; use the explicit non-fixing command for re
 - Make small, incremental changes.
 - Run typecheck after each implementation phase.
 - Do not modify unrelated files.
+
+## Git Commit Workflow
+
+- Automatically create Git commits after completing each small, logical change.
+- Do not wait for me to remind you to commit.
+- Use only `feat:` and `fix:` commit prefixes.
+- Keep commit messages short, natural, and descriptive.
+- Do not combine unrelated changes into a single commit.
+- When modifying multiple pages, components, or folders, create separate commits for independently completed changes.
+- For large tasks, divide the implementation into smaller logical steps and commit each completed step.
+- Do not create unnecessary commits for whitespace, comments, or meaningless changes.
+- Before each commit, review `git diff` and stage only files related to that change.
+- Run relevant checks before committing whenever possible.
+- Do not commit broken or incomplete functionality.
+- Never use `git add .` or `git add -A` without reviewing all changes.
+- Never amend, reset, rebase, or force-push existing Git history without my approval.
+- Do not push commits to GitHub unless I explicitly request it.
+- After completing a task, report the commits you created.

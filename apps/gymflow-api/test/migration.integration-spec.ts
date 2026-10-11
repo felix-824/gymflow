@@ -394,6 +394,47 @@ describe('GymFlow migration against disposable MongoDB', () => {
 		await followService.unsubscribe(user._id, trainer._id);
 		expect((await members.findById(trainer._id).lean().exec())?.memberFollowers).toBe(0);
 	});
+	it('returns real trainer follow state and follower counters for the authenticated viewer', async () => {
+		const query = `query($input: TrainersInquiry!) {
+			getTrainers(input: $input) {
+				list { _id memberFollowers meFollowed { myFollowing } }
+				metaCounter { total }
+			}
+		}`;
+		const variables = {
+			input: { page: 1, limit: 1, sort: 'createdAt', direction: 'DESC', search: { text: 'trainer' } },
+		};
+		type TrainerResult = {
+			getTrainers: {
+				list: { _id: string; memberFollowers: number; meFollowed: { myFollowing: boolean }[] }[];
+				metaCounter: { total: number }[];
+			};
+		};
+		const read = async (viewer?: Member) => {
+			const result = await gql<TrainerResult>(query, variables, viewer);
+			expect(result.errors).toBeUndefined();
+			expect(result.data?.getTrainers.metaCounter[0].total).toBe(1);
+			expect(result.data?.getTrainers.list).toHaveLength(1);
+			return result.data?.getTrainers.list[0];
+		};
+		expect(await read()).toMatchObject({ memberFollowers: 0, meFollowed: [] });
+		expect(await read(user)).toMatchObject({ memberFollowers: 0, meFollowed: [] });
+		const subscribe = 'mutation($id: String!) { subscribe(input: $id) { _id } }';
+		const unsubscribe = 'mutation($id: String!) { unsubscribe(input: $id) { _id } }';
+		const target = { id: trainer._id.toHexString() };
+		expect((await gql(subscribe, target)).errors).toBeDefined();
+		expect((await gql(subscribe, { id: user._id.toHexString() }, user)).errors).toBeDefined();
+		expect((await gql(subscribe, target, user)).errors).toBeUndefined();
+		expect(await read(user)).toMatchObject({ memberFollowers: 1, meFollowed: [{ myFollowing: true }] });
+		expect(await read(otherTrainer)).toMatchObject({ memberFollowers: 1, meFollowed: [] });
+		expect(await read()).toMatchObject({ memberFollowers: 1, meFollowed: [] });
+		expect((await gql(subscribe, target, user)).errors).toBeDefined();
+		expect(await read(user)).toMatchObject({ memberFollowers: 1 });
+		expect((await gql(unsubscribe, target, user)).errors).toBeUndefined();
+		expect(await read(user)).toMatchObject({ memberFollowers: 0, meFollowed: [] });
+		expect((await members.findById(user._id).lean().exec())?.memberFollowings).toBe(0);
+	});
+
 	it('accepts an authenticated multipart program image and preserves its bytes', async () => {
 		if (!app) throw new Error('Test application not initialized');
 		const bytes = Buffer.from(

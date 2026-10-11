@@ -283,3 +283,15 @@ Implemented the approved trend-programs-only design update in the sibling gymflo
 - Temporary checks live outside the repository. User-added skill files and skills-lock.json changes were preserved and excluded from the commit.
 
 Frontend commit: a78c910 (feat: refine trend program cards). No GitHub push or deployment.
+
+## Trainer Discovery Phase 2 - real follows and followers (October 12, 2026)
+
+- Added the existing lookupAuthMemberFollowed helper after skip/limit in getTrainers, scoped to the authenticated follower and each trainer _id. Existing filters, sorts, likes, totals, schema, mutations and guest access are preserved.
+- GET_TRAINERS now selects memberFollowers and meFollowed.myFollowing. Discovery cards show real Programs / Followers / Views and Follow / Following derived only from server data. Existing member Likes remain separate; mobile Like placement avoids the existing floating Chat.
+- Reused SUBSCRIBE/UNSUBSCRIBE with guest/self guards and a synchronous per-trainer submission lock. Refetch uses the observable's current search/sort/page; failures reconcile server state. No location filtering or unsupported Stitch domain features were added.
+- Runtime validation exposed the existing fire-and-forget auth clearStore cancelling CheckAuth (Apollo invariant 30). The user separately approved the minimal fix: await clearStore before CheckAuth. Trainer authReady/skip/loading/refetch conditions remain unchanged.
+- Targeted trainer/imported-dependency TypeScript, backend API TypeScript, trainer SCSS, EN/KR/RU JSON/keys, backend non-fixing lint and git diff --check passed. Frontend non-fixing lint passed with the existing custom-font and img-element warnings.
+- Added and passed one focused real MongoDB integration test covering guest/authenticated/other-viewer relation state, follower +1/-1, duplicate subscribe rejection, self-follow rejection and existing search/pagination totals. Other integration tests were not run.
+- Real headless Edge checks used the actual Next frontend and Nest GraphQL services with disposable MongoDB, not mocked GraphQL. Passed guest auth feedback, initial Following, Follow/Unfollow counters, rapid-click locking, self-action hiding, authenticated refresh/direct URL, search/sort/pagination preservation, View Profile and Like/Unlike.
+- Passed EN/KR/RU layout checks at 1440px (three columns) and 390px (one column), no horizontal overflow/action overlap, five mobile destinations, and unchanged Chat/footer/navigation spacing at 26 narrow desktop-UA scroll positions. Native mobile-UA keeps its existing Chat visibility behavior. Physical devices and screen readers were not tested.
+- The existing localhost:3007 backend returned three trainers successfully read-only. Initial localhost:3000 inspection showed "missing required error components, refreshing..." before Trainer mounted, so browser validation used a fresh temporary verification frontend/API; no application-database writes or environment-file edits were made. No commits or pushes.

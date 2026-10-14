@@ -9,6 +9,7 @@ import { FollowModule } from './follow/follow.module';
 import { BoardArticleModule } from './board-article/board-article.module';
 import { TrainerScheduleModule } from './trainer-schedule/trainer-schedule.module';
 import { ReservationModule } from './reservation/reservation.module';
+import { AvailabilityModule } from './availability/availability.module';
 
 @Module({
 	imports: [
@@ -22,6 +23,7 @@ import { ReservationModule } from './reservation/reservation.module';
 		BoardArticleModule,
 		TrainerScheduleModule,
 		ReservationModule,
+		AvailabilityModule,
 	],
 })
 export class ComponentsModule {}

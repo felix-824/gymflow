@@ -7,6 +7,8 @@ import TrainerScheduleSchema from '../../schemas/TrainerSchedule.model';
 import { AuthModule } from '../auth/auth.module';
 import { ReservationResolver } from './reservation.resolver';
 import { ReservationService } from './reservation.service';
+import { ReservationUserResolver } from './reservation-user.resolver';
+import { ReservationUserService } from './reservation-user.service';
 
 @Module({
 	imports: [
@@ -18,6 +20,6 @@ import { ReservationService } from './reservation.service';
 			{ name: 'TrainerSchedule', schema: TrainerScheduleSchema },
 		]),
 	],
-	providers: [ReservationResolver, ReservationService],
+	providers: [ReservationResolver, ReservationService, ReservationUserResolver, ReservationUserService],
 })
 export class ReservationModule {}

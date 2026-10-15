@@ -9,6 +9,8 @@ import { ReservationResolver } from './reservation.resolver';
 import { ReservationService } from './reservation.service';
 import { ReservationUserResolver } from './reservation-user.resolver';
 import { ReservationUserService } from './reservation-user.service';
+import { ReservationTrainerResolver } from './reservation-trainer.resolver';
+import { ReservationTrainerService } from './reservation-trainer.service';
 
 @Module({
 	imports: [
@@ -20,6 +22,13 @@ import { ReservationUserService } from './reservation-user.service';
 			{ name: 'TrainerSchedule', schema: TrainerScheduleSchema },
 		]),
 	],
-	providers: [ReservationResolver, ReservationService, ReservationUserResolver, ReservationUserService],
+	providers: [
+		ReservationResolver,
+		ReservationService,
+		ReservationUserResolver,
+		ReservationUserService,
+		ReservationTrainerResolver,
+		ReservationTrainerService,
+	],
 })
 export class ReservationModule {}

@@ -67,6 +67,22 @@ export class ReservationUserService {
 								},
 							},
 							{ $unwind: { path: '$trainerData', preserveNullAndEmptyArrays: true } },
+							{
+								$lookup: {
+									from: 'reviews',
+									localField: '_id',
+									foreignField: 'reservationId',
+									let: { ownerId: '$memberId' },
+									as: 'reviewData',
+									pipeline: [
+										{ $match: { $expr: { $eq: ['$memberId', '$$ownerId'] } } },
+										{ $project: { _id: 1 } },
+										{ $limit: 1 },
+									],
+								},
+							},
+							{ $set: { reviewId: { $ifNull: [{ $arrayElemAt: ['$reviewData._id', 0] }, null] } } },
+							{ $unset: 'reviewData' },
 						],
 						metaCounter: [{ $count: 'total' }],
 					},

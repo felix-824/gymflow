@@ -24,6 +24,7 @@ export class ReservationTrainerSummary {
 
 @ObjectType()
 export class MyReservation extends Reservation {
+	@Field(() => String, { nullable: true }) reviewId?: Types.ObjectId | null;
 	@Field(() => ReservationProgramSummary, { nullable: true }) programData?: ReservationProgramSummary | null;
 	@Field(() => ReservationTrainerSummary, { nullable: true }) trainerData?: ReservationTrainerSummary | null;
 }

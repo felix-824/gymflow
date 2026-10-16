@@ -13,6 +13,7 @@ import { Server } from 'node:http';
 import { resolve } from 'node:path';
 import { ReservationModule } from '../src/components/reservation/reservation.module';
 import { ReservationService } from '../src/components/reservation/reservation.service';
+import { ProgramService } from '../src/components/program/program.service';
 import { AvailabilityModule } from '../src/components/availability/availability.module';
 import { ReservationInput } from '../src/libs/dto/reservation/reservation.input';
 import { Reservation } from '../src/libs/dto/reservation/reservation';
@@ -51,6 +52,7 @@ describe('Reservation create against disposable replica-set GraphQL', () => {
 		schedules: Model<TrainerSchedule>,
 		reservations: Model<Reservation>;
 	let service: ReservationService;
+	let programService: ProgramService;
 	let trainer: Member, otherTrainer: Member, user: Member, otherUser: Member, thirdUser: Member, admin: Member;
 	let pt: Program, group: Program, otherProgram: Program, otherPt: Program, online: Program;
 	const previousDownload = process.env.MONGOMS_RUNTIME_DOWNLOAD;
@@ -139,6 +141,7 @@ describe('Reservation create against disposable replica-set GraphQL', () => {
 		schedules = connection.model<TrainerSchedule>('TrainerSchedule');
 		reservations = connection.model<Reservation>('Reservation');
 		service = module.get(ReservationService);
+		programService = module.get(ProgramService);
 		await Promise.all(Object.values(connection.models).map((model) => model.init()));
 	});
 	afterAll(async () => {
@@ -213,6 +216,260 @@ describe('Reservation create against disposable replica-set GraphQL', () => {
 		jest.restoreAllMocks();
 	});
 
+	const editQuery = async (patch: object, viewer: Member | null = trainer, byAdmin = false) => {
+		const name = byAdmin ? 'updateProgramByAdmin' : 'updateProgram';
+		const operation = request(app!.getHttpServer() as Server).post('/graphql');
+		if (viewer) operation.set('Authorization', 'Bearer ' + token(viewer));
+		const result = await operation.send({
+			query: `mutation($input: ProgramUpdate!) { ${name}(input: $input) { _id programType programDuration programLocation programAddress programCapacity programPrice programStatus } }`,
+			variables: { input: { _id: pt._id.toHexString(), ...patch } },
+		});
+		return result.body as {
+			data?: { updateProgram?: Program; updateProgramByAdmin?: Program };
+			errors?: { message: string }[];
+		};
+	};
+	it.each([
+		{ programType: ProgramType.GROUP_CLASS },
+		{ programDuration: 30 },
+		{ programLocation: ProgramLocation.BUSAN },
+		{ programAddress: 'Another training room' },
+	])('15C rejects protected sensitive change %j without changing any data', async (patch) => {
+		await fixture();
+		const before = await snapshot();
+		expect((await editQuery(patch)).errors?.[0].message).toContain('upcoming reservations');
+		expect(await snapshot()).toBe(before);
+	});
+	it('15C accepts unchanged fields, canonical address and price with a protected reservation', async () => {
+		await fixture();
+		const result = await editQuery({
+			programType: pt.programType,
+			programDuration: pt.programDuration,
+			programLocation: pt.programLocation,
+			programAddress: ' Seoul fixture address ',
+			programPrice: 70000,
+		});
+		expect(result.errors).toBeUndefined();
+		expect(result.data?.updateProgram?.programPrice).toBe(70000);
+		expect(await reservations.countDocuments()).toBe(1);
+	});
+	it('15C allows sensitive edits with no reservations', async () => {
+		expect((await editQuery({ programDuration: 30 })).errors).toBeUndefined();
+	});
+	it.each([ReservationStatus.COMPLETED, ReservationStatus.CANCELLED, ReservationStatus.NO_SHOW])(
+		'15C ignores terminal %s without rewriting its status',
+		async (status) => {
+			const row = await fixture(pt, otherUser, status);
+			expect((await editQuery({ programDuration: 30 })).errors).toBeUndefined();
+			expect((await reservations.findById(row._id))?.reservationStatus).toBe(status);
+		},
+	);
+	it.each([ReservationStatus.PENDING, ReservationStatus.CONFIRMED])(
+		'15C ignores ended %s at exact stored endTime',
+		async (status) => {
+			await fixture(pt, otherUser, status);
+			jest.mocked(availability.getSeoulDateTime).mockReturnValue({ reservationDate: date, time: '10:00' });
+			expect((await editQuery({ programDuration: 30 })).errors).toBeUndefined();
+		},
+	);
+	it.each([
+		['2030-01-07', '23:59', true],
+		[date, '00:00', true],
+		[date, '09:00', true],
+		[date, '09:30', true],
+		[date, '09:59', true],
+		[date, '10:00', false],
+		['2030-01-09', '00:00', false],
+	])('15C Seoul boundary %s %s protected=%s', async (day, time, protectedSession) => {
+		await fixture();
+		jest.mocked(availability.getSeoulDateTime).mockReturnValue({
+			reservationDate: day as string,
+			time: time as string,
+		});
+		const result = await editQuery({ programDuration: 30 });
+		if (protectedSession) expect(result.errors?.[0].message).toContain('upcoming reservations');
+		else expect(result.errors).toBeUndefined();
+	});
+	it('15C uses the maximum occupied exact tuple across dates, end times and mixed statuses', async () => {
+		await programs.updateOne({ _id: group._id }, { programCapacity: 8 });
+		await fixture(group, user, ReservationStatus.PENDING);
+		await fixture(group, otherUser, ReservationStatus.CONFIRMED);
+		await fixture(group, thirdUser, ReservationStatus.PENDING);
+		await fixture(group, user, ReservationStatus.PENDING, '10:00', '11:00');
+		await fixture(group, user, ReservationStatus.PENDING, '09:00', '09:30');
+		await fixture(group, otherUser, ReservationStatus.CONFIRMED, '09:00', '09:30');
+		await reservations.create({
+			programId: group._id,
+			trainerId: trainer._id,
+			memberId: user._id,
+			reservationDate: '2030-01-09',
+			startTime: '09:00',
+			endTime: '10:00',
+		});
+		await fixture(group, user, ReservationStatus.CANCELLED);
+		const before = await snapshot();
+		expect((await editQuery({ _id: group._id.toHexString(), programCapacity: 2 })).errors?.[0].message).toContain(
+			'occupied session seats',
+		);
+		expect(await snapshot()).toBe(before);
+		expect((await editQuery({ _id: group._id.toHexString(), programCapacity: 3 })).errors).toBeUndefined();
+		expect((await editQuery({ _id: group._id.toHexString(), programCapacity: 4 })).errors).toBeUndefined();
+		expect(await reservations.countDocuments()).toBe(8);
+	});
+	it('15C allows increases even when pre-existing occupancy is above the old capacity', async () => {
+		await programs.updateOne({ _id: group._id }, { programCapacity: 1 });
+		await fixture(group, user);
+		await fixture(group, otherUser);
+		await fixture(group, thirdUser);
+		expect((await editQuery({ _id: group._id.toHexString(), programCapacity: 2 })).errors).toBeUndefined();
+	});
+	it('15C preserves PT capacity and ONLINE pairing/non-bookability', async () => {
+		expect((await editQuery({ programCapacity: 2 })).errors).toBeDefined();
+		expect((await editQuery({ programType: ProgramType.ONLINE })).errors).toBeDefined();
+		expect(
+			(
+				await editQuery({
+					programType: ProgramType.ONLINE,
+					programLocation: ProgramLocation.ONLINE,
+					programAddress: null,
+				})
+			).errors,
+		).toBeUndefined();
+		await rejected(input(), user, 'Only PT_1ON1 and GROUP_CLASS');
+	});
+	it('15C enforces roles/ownership and does not allow ADMIN to bypass protected changes', async () => {
+		await fixture();
+		for (const viewer of [null, user, otherTrainer])
+			expect((await editQuery({ programDuration: 30 }, viewer)).errors).toBeDefined();
+		expect((await editQuery({ programDuration: 30 }, admin, true)).errors?.[0].message).toContain(
+			'upcoming reservations',
+		);
+		expect((await editQuery({ programPrice: 50000 }, admin, true)).errors).toBeUndefined();
+	});
+	it('15C protects PAUSED programs while leaving status management/lifecycle unchanged', async () => {
+		await fixture();
+		expect((await editQuery({ programStatus: ProgramStatus.PAUSED })).errors).toBeUndefined();
+		expect((await editQuery({ programDuration: 30 })).errors?.[0].message).toContain('upcoming reservations');
+		expect((await editQuery({ programPrice: 90000 })).errors).toBeUndefined();
+		expect((await editQuery({ programStatus: ProgramStatus.ACTIVE })).errors).toBeUndefined();
+		expect((await editQuery({ programStatus: ProgramStatus.DELETE })).errors).toBeUndefined();
+		expect(await reservations.countDocuments()).toBe(1);
+	});
+	it('15C failed constraint read cannot write a program or reservations', async () => {
+		const before = await snapshot();
+		jest.spyOn(reservations, 'aggregate').mockImplementationOnce(() => {
+			throw new Error('Forced constraint read failure');
+		});
+		await expect(
+			programService.updateProgram(trainer._id, {
+				_id: pt._id,
+				programDuration: 30,
+			}),
+		).rejects.toThrow('Forced constraint read failure');
+		expect(await snapshot()).toBe(before);
+	});
+	it.each(['booking-first', 'edit-first'])('15C first booking versus duration edit: %s', async (order) => {
+		const entered = barrier(),
+			resume = barrier();
+		const original = programs.collection.findOneAndUpdate.bind(programs.collection);
+		let held = false,
+			editWrites = 0;
+		jest
+			.spyOn(programs.collection, 'findOneAndUpdate')
+			.mockImplementation(async (...args: Parameters<typeof original>) => {
+				const isEdit = args[1].$set?.programDuration === 30;
+				if (isEdit) editWrites++;
+				if (!held && (order === 'booking-first' ? isEdit : !isEdit)) {
+					held = true;
+					entered.release();
+					await resume.promise;
+				}
+				return original(...args);
+			});
+		if (order === 'booking-first') {
+			const editing = programService.updateProgram(trainer._id, { _id: pt._id, programDuration: 30 }).then(
+				(value) => ({ value }),
+				(error) => ({ error }),
+			);
+			await entered.promise;
+			try {
+				success(await query());
+			} finally {
+				resume.release();
+			}
+			const result = await editing;
+			expect('error' in result && (result.error as Error).message).toContain('Program changed');
+			expect((await programs.findById(pt._id))?.programDuration).toBe(60);
+			expect((await reservations.findOne())?.endTime).toBe('10:00');
+		} else {
+			const booking = query();
+			await entered.promise;
+			try {
+				await programService.updateProgram(trainer._id, {
+					_id: pt._id,
+					programDuration: 30,
+				});
+			} finally {
+				resume.release();
+			}
+			expect(success(await booking).endTime).toBe('09:30');
+			expect((await programs.findById(pt._id))?.programDuration).toBe(30);
+		}
+		expect(editWrites).toBe(1);
+		expect(await reservations.countDocuments()).toBe(1);
+	});
+	it.each(['booking-first', 'edit-first'])('15C capacity decrease versus final-seat booking: %s', async (order) => {
+		await fixture(group, otherUser);
+		await fixture(group, thirdUser);
+		const entered = barrier(),
+			resume = barrier();
+		const original = programs.collection.findOneAndUpdate.bind(programs.collection);
+		let held = false,
+			editWrites = 0;
+		jest
+			.spyOn(programs.collection, 'findOneAndUpdate')
+			.mockImplementation(async (...args: Parameters<typeof original>) => {
+				const isEdit = args[1].$set?.programCapacity === 2;
+				if (isEdit) editWrites++;
+				if (!held && (order === 'booking-first' ? isEdit : !isEdit)) {
+					held = true;
+					entered.release();
+					await resume.promise;
+				}
+				return original(...args);
+			});
+		if (order === 'booking-first') {
+			const editing = programService.updateProgram(trainer._id, { _id: group._id, programCapacity: 2 }).then(
+				(value) => ({ value }),
+				(error) => ({ error }),
+			);
+			await entered.promise;
+			try {
+				success(await query(input(group)));
+			} finally {
+				resume.release();
+			}
+			const result = await editing;
+			expect('error' in result && (result.error as Error).message).toContain('Program changed');
+			expect((await programs.findById(group._id))?.programCapacity).toBe(3);
+			expect(await reservations.countDocuments()).toBe(3);
+		} else {
+			const booking = query(input(group));
+			await entered.promise;
+			try {
+				await programService.updateProgram(trainer._id, {
+					_id: group._id,
+					programCapacity: 2,
+				});
+			} finally {
+				resume.release();
+			}
+			expect((await booking).errors?.[0].message).toContain('full');
+			expect((await programs.findById(group._id))?.programCapacity).toBe(2);
+			expect(await reservations.countDocuments()).toBe(2);
+		}
+		expect(editWrites).toBe(1);
+	});
 	it('exposes only the minimal create input and existing Reservation output', () => {
 		const schema = app!.get(GraphQLSchemaHost).schema;
 		const field = schema.getMutationType()!.getFields().createReservation;

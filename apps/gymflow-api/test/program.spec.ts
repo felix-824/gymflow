@@ -13,6 +13,11 @@ import { ProgramUpdate } from '../src/libs/dto/program/program.update';
 import { StatisticModifier } from '../src/libs/types/common';
 import { dependency, query } from './helpers';
 
+function primaryQuery<T>(value: T) {
+	const result = query(value);
+	return { ...result, read: () => result };
+}
+
 const id = new Types.ObjectId();
 const owner = new Types.ObjectId();
 const valid = (): ProgramInput => ({
@@ -83,7 +88,7 @@ describe('Program lifecycle and discovery', () => {
 	const mocks = () => ({
 		modelMock: {
 			findOne: jest.fn((filter: { memberId?: Types.ObjectId }) =>
-				query<State | null>(!filter.memberId || filter.memberId.equals(owner) ? { ...state } : null),
+				primaryQuery<State | null>(!filter.memberId || filter.memberId.equals(owner) ? { ...state } : null),
 			),
 			findOneAndUpdate: jest.fn((filter: { __v: number }, update: { $set: Partial<State> }) => {
 				if (filter.__v !== state.__v) return query<State | null>(null);
@@ -109,6 +114,9 @@ describe('Program lifecycle and discovery', () => {
 		},
 		view: { getVisitedPrograms: jest.fn(), removeProgramViews: jest.fn() },
 		notifications: { deleteMany: jest.fn(() => query({})) },
+		reservationModel: {
+			aggregate: jest.fn(() => primaryQuery<{ protectedCount: number; maxOccupied: number }[]>([])),
+		},
 	});
 	let modelMock: ReturnType<typeof mocks>['modelMock'];
 	let member: ReturnType<typeof mocks>['member'];
@@ -116,6 +124,7 @@ describe('Program lifecycle and discovery', () => {
 	let view: ReturnType<typeof mocks>['view'];
 	let notifications: ReturnType<typeof mocks>['notifications'];
 	let service: ProgramService;
+	let reservationModel: ReturnType<typeof mocks>['reservationModel'];
 	beforeEach(() => {
 		state = {
 			...valid(),
@@ -126,14 +135,54 @@ describe('Program lifecycle and discovery', () => {
 			programLikes: 0,
 			programViews: 0,
 		};
-		({ modelMock, member, like, view, notifications } = mocks());
+		({ modelMock, member, like, view, notifications, reservationModel } = mocks());
 		service = new ProgramService(
 			dependency(modelMock),
 			dependency(notifications),
 			dependency(member),
 			dependency(view),
 			dependency(like),
+			dependency(reservationModel),
 		);
+	});
+	it.each([
+		{ programType: ProgramType.GROUP_CLASS },
+		{ programDuration: 30 },
+		{ programLocation: ProgramLocation.BUSAN },
+		{ programAddress: 'Busan gym' },
+	])('rejects protected sensitive changes before any write: %j', async (patch) => {
+		reservationModel.aggregate.mockReturnValue(primaryQuery([{ protectedCount: 1, maxOccupied: 1 }]));
+		await expect(service.updateProgram(owner, { _id: id, ...patch })).rejects.toThrow('upcoming reservations');
+		expect(modelMock.findOneAndUpdate).not.toHaveBeenCalled();
+		expect(member.memberStatsEditor).not.toHaveBeenCalled();
+	});
+	it('accepts unchanged/canonical values and price changes without a policy scan', async () => {
+		await service.updateProgram(owner, {
+			_id: id,
+			...valid(),
+			programAddress: ' Seoul gym ',
+			programPrice: 60000,
+		});
+		expect(reservationModel.aggregate).not.toHaveBeenCalled();
+		expect(state.programPrice).toBe(60000);
+	});
+	it('does not let ADMIN bypass protected edits', async () => {
+		reservationModel.aggregate.mockReturnValue(primaryQuery([{ protectedCount: 1, maxOccupied: 1 }]));
+		await expect(service.updateProgramByAdmin({ _id: id, programDuration: 30 })).rejects.toThrow(
+			'upcoming reservations',
+		);
+		expect(modelMock.findOneAndUpdate).not.toHaveBeenCalled();
+	});
+	it('checks capacity decreases against the maximum session and permits increases', async () => {
+		state.programType = ProgramType.GROUP_CLASS;
+		state.programCapacity = 8;
+		reservationModel.aggregate.mockReturnValue(primaryQuery([{ protectedCount: 9, maxOccupied: 5 }]));
+		await expect(service.updateProgram(owner, { _id: id, programCapacity: 4 })).rejects.toThrow(
+			'occupied session seats',
+		);
+		await service.updateProgram(owner, { _id: id, programCapacity: 5 });
+		await service.updateProgram(owner, { _id: id, programCapacity: 6 });
+		expect(state.programCapacity).toBe(6);
 	});
 	it('creates with authenticated ownership and ignores client counters/status', async () => {
 		await service.createProgram(owner, {

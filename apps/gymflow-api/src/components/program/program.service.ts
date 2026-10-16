@@ -16,7 +16,9 @@ import { Direction } from '../../libs/enums/common.enum';
 import { MemberService } from '../member/member.service';
 import { ViewService } from '../view/view.service';
 import { LikeService } from '../like/like.service';
-import { ProgramStatus } from '../../libs/enums/program.enum';
+import { ProgramStatus, ProgramType } from '../../libs/enums/program.enum';
+import { Reservation } from '../../libs/dto/reservation/reservation';
+import { capacityOccupyingStatuses, getSeoulDateTime } from '../../libs/availability';
 import { LikeGroup } from '../../libs/enums/like.enum';
 import { ViewGroup } from '../../libs/enums/view.enum';
 import { MemberStatus, MemberType } from '../../libs/enums/member.enum';
@@ -46,6 +48,8 @@ export class ProgramService {
 		private readonly memberService: MemberService,
 		private readonly viewService: ViewService,
 		private readonly likeService: LikeService,
+		@InjectModel('Reservation')
+		private readonly reservationModel: Model<Reservation>,
 	) {}
 
 	public async createProgram(memberId: ObjectId, input: ProgramInput): Promise<Program> {
@@ -106,13 +110,68 @@ export class ProgramService {
 
 	private async update(input: ProgramUpdate, memberId?: ObjectId): Promise<Program> {
 		const selector = { _id: input._id, ...(memberId ? { memberId } : {}) };
-		const current = await this.programModel.findOne(selector).lean().exec();
+		const current = await this.programModel.findOne(selector).read('primary').lean().exec();
 		if (!current || current.programStatus === ProgramStatus.DELETE)
 			throw new NotFoundException('Editable program not found');
 		const status = input.programStatus === undefined ? current.programStatus : input.programStatus;
 		if (!Object.values(ProgramStatus).includes(status)) throw new BadRequestException('Invalid program status');
 		const fields = this.pickFields(input);
-		assertProgram({ ...current, ...fields });
+		const next = { ...current, ...fields };
+		assertProgram(next);
+		const changes = [
+			['programType', 'Program type'],
+			['programDuration', 'Program duration'],
+			['programLocation', 'Program location'],
+		] as const;
+		const changed: string[] = changes.filter(([field]) => current[field] !== next[field]).map(([, label]) => label);
+		if ((current.programAddress?.trim() ?? '') !== (next.programAddress?.trim() ?? '')) changed.push('Program address');
+		const capacityDecrease =
+			current.programType === ProgramType.GROUP_CLASS &&
+			next.programType === ProgramType.GROUP_CLASS &&
+			next.programCapacity < current.programCapacity;
+		if (changed.length || capacityDecrease) {
+			const now = getSeoulDateTime(new Date());
+			const [constraints] = await this.reservationModel
+				.aggregate<{ protectedCount: number; maxOccupied: number }>([
+					{
+						$match: {
+							programId: current._id,
+							reservationStatus: { $in: capacityOccupyingStatuses },
+							$or: [
+								{ reservationDate: { $gt: now.reservationDate } },
+								{
+									reservationDate: now.reservationDate,
+									endTime: { $gt: now.time },
+								},
+							],
+						},
+					},
+					{
+						$group: {
+							_id: {
+								programId: '$programId',
+								reservationDate: '$reservationDate',
+								startTime: '$startTime',
+								endTime: '$endTime',
+							},
+							occupied: { $sum: 1 },
+						},
+					},
+					{
+						$group: {
+							_id: null,
+							protectedCount: { $sum: '$occupied' },
+							maxOccupied: { $max: '$occupied' },
+						},
+					},
+				])
+				.read('primary')
+				.exec();
+			if (constraints?.protectedCount && changed.length)
+				throw new BadRequestException(changed[0] + ' cannot be changed while upcoming reservations exist.');
+			if (capacityDecrease && next.programCapacity < (constraints?.maxOccupied ?? 0))
+				throw new BadRequestException('Program capacity cannot be reduced below occupied session seats.');
+		}
 		const result = await this.programModel
 			.findOneAndUpdate(
 				{ ...selector, programStatus: current.programStatus, __v: current.__v },

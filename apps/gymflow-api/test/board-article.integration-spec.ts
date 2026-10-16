@@ -20,6 +20,7 @@ import { BoardArticleCategory, BoardArticleStatus } from '../src/libs/enums/boar
 import { GraphQLAuthContext } from '../src/libs/types/auth-context';
 
 type ArticleResult = Omit<BoardArticle, '__v'> & { articleRevision: number };
+type OwnerArticles = Omit<BoardArticles, 'list'> & { list: ArticleResult[] };
 interface Result<T = ArticleResult> {
 	data?: Record<string, T> | null;
 	errors?: { message: string; extensions?: { code?: string; originalError?: { statusCode?: number } } }[];
@@ -63,6 +64,12 @@ describe('Community authoring against disposable GraphQL and MongoDB', () => {
 	};
 	const lookup = (id = article._id.toHexString(), viewer: Member | null = user) =>
 		gql(`query($id: String!) { getMyBoardArticle(articleId: $id) { ${fields} } }`, { id }, viewer);
+	const ownerList = (input: object = { page: 1, limit: 10 }, viewer: Member | null = user) =>
+		gql<OwnerArticles>(
+			`query($input: OrdinaryInquiry!) { getMyBoardArticles(input: $input) { list { ${fields} } metaCounter { total } } }`,
+			{ input },
+			viewer,
+		);
 	const success = (result: Result, operation: string) => {
 		expect(result.errors).toBeUndefined();
 		expect(result.data?.[operation]).toBeDefined();
@@ -76,7 +83,7 @@ describe('Community authoring against disposable GraphQL and MongoDB', () => {
 				),
 			),
 		);
-	const rejected = async (pending: () => Promise<Result>) => {
+	const rejected = async <T = ArticleResult>(pending: () => Promise<Result<T>>) => {
 		const before = await snapshot();
 		const result = await pending();
 		expect(result.errors?.length).toBeGreaterThan(0);
@@ -296,6 +303,153 @@ describe('Community authoring against disposable GraphQL and MongoDB', () => {
 		}
 	});
 
+	it.each(['user', 'trainer', 'admin'])(
+		'OWNER LIST returns only own ACTIVE articles for %s without writes',
+		async (role) => {
+			const viewer = role === 'user' ? user : role === 'trainer' ? trainer : admin;
+			const own = await articles.create({
+				...valid(),
+				memberId: viewer._id,
+				articleViews: 7,
+				articleLikes: 5,
+				articleComments: 3,
+			});
+			await articles.create([
+				{ ...valid(), memberId: viewer._id, articleStatus: BoardArticleStatus.DELETE },
+				{ ...valid(), memberId: other._id },
+			]);
+			const before = await snapshot();
+			const result = await ownerList({ page: 1, limit: 10 }, viewer);
+			expect(result.errors).toBeUndefined();
+			const listed = result.data!.getMyBoardArticles;
+			expect(listed.list.map((item) => item._id).sort()).toEqual(
+				(role === 'user' ? [article._id.toHexString(), own._id.toHexString()] : [own._id.toHexString()]).sort(),
+			);
+			expect(listed.metaCounter).toEqual([{ total: role === 'user' ? 2 : 1 }]);
+			expect(
+				listed.list.every(
+					(item) => item.memberId === viewer._id.toHexString() && item.articleStatus === BoardArticleStatus.ACTIVE,
+				),
+			).toBe(true);
+			expect(listed.list.find((item) => item._id === own._id.toHexString())).toMatchObject({
+				articleRevision: 0,
+				articleViews: 7,
+				articleLikes: 5,
+				articleComments: 3,
+				articleContent: valid().articleContent,
+			});
+			expect(await snapshot()).toBe(before);
+		},
+	);
+	it('OWNER LIST returns an empty library and zero total without exposing foreign articles', async () => {
+		const before = await snapshot();
+		const result = await ownerList({ page: 1, limit: 6 }, other);
+		expect(result.errors).toBeUndefined();
+		expect(result.data?.getMyBoardArticles.list).toEqual([]);
+		expect(result.data?.getMyBoardArticles.metaCounter?.[0]?.total ?? 0).toBe(0);
+		expect(await snapshot()).toBe(before);
+	});
+	it('OWNER LIST paginates newest-first with deterministic IDs, exact totals and no duplicate/missing rows', async () => {
+		await articles.deleteMany({});
+		const rows = [1, 6, 3, 2, 5, 4].map((id) => ({
+			...valid(),
+			_id: new Types.ObjectId(id.toString(16).padStart(24, '0')),
+			memberId: user._id,
+			createdAt: new Date(id <= 2 ? '2026-01-01T00:00:00Z' : '2026-01-02T00:00:00Z'),
+		}));
+		await articles.create([
+			...rows,
+			{ ...valid(), memberId: user._id, articleStatus: BoardArticleStatus.DELETE },
+			{ ...valid(), memberId: other._id },
+		]);
+		const before = await snapshot();
+		const ids: string[] = [];
+		for (const page of [1, 2, 3]) {
+			const result = await ownerList({ page, limit: 2 });
+			expect(result.errors).toBeUndefined();
+			expect(result.data?.getMyBoardArticles.metaCounter).toEqual([{ total: 6 }]);
+			expect(result.data?.getMyBoardArticles.list).toHaveLength(2);
+			ids.push(...result.data!.getMyBoardArticles.list.map((item) => item._id));
+		}
+		expect(ids).toEqual([6, 5, 4, 3, 2, 1].map((id) => id.toString(16).padStart(24, '0')));
+		expect(new Set(ids).size).toBe(6);
+		const beyond = await ownerList({ page: 4, limit: 2 });
+		expect(beyond.errors).toBeUndefined();
+		expect(beyond.data?.getMyBoardArticles).toEqual({ list: [], metaCounter: [{ total: 6 }] });
+		expect(await snapshot()).toBe(before);
+	});
+	it.each(['memberId', 'articleStatus', 'search', 'sort', 'direction', 'articleCategory', 'text'])(
+		'OWNER LIST rejects unsupported client field %s',
+		async (field) => {
+			await rejected(() =>
+				ownerList({
+					page: 1,
+					limit: 10,
+					[field]: field === 'search' ? { memberId: other._id.toHexString() } : other._id.toHexString(),
+				}),
+			);
+		},
+	);
+	it.each([
+		{ page: 0 },
+		{ page: -1 },
+		{ page: 1.5 },
+		{ limit: 0 },
+		{ limit: -1 },
+		{ limit: 1.5 },
+		{ page: null },
+		{ limit: null },
+		{ page: undefined },
+		{ limit: undefined },
+		{ limit: '2' },
+	])('OWNER LIST rejects invalid pagination %j without writes', async (patch) => {
+		await rejected(() => ownerList({ page: 1, limit: 10, ...patch }));
+	});
+	it.each(['guest', 'blocked', 'deleted'])('OWNER LIST denies %s accounts', async (state) => {
+		if (state !== 'guest')
+			await members.updateOne(
+				{ _id: user._id },
+				{ memberStatus: state === 'blocked' ? MemberStatus.BLOCK : MemberStatus.DELETE },
+			);
+		await rejected(() => ownerList({ page: 1, limit: 10 }, state === 'guest' ? null : user));
+	});
+	it.each(['invalid', 'expired', 'missing-account'])('OWNER LIST denies %s authentication', async (state) => {
+		const bearer =
+			state === 'invalid'
+				? 'invalid-token'
+				: app!.get(JwtService).sign({
+						sub: state === 'missing-account' ? new Types.ObjectId().toHexString() : user._id.toHexString(),
+						...(state === 'expired' ? { exp: 1 } : {}),
+					});
+		const before = await snapshot();
+		const result = await request(app!.getHttpServer() as Server)
+			.post('/graphql')
+			.set('Authorization', 'Bearer ' + bearer)
+			.send({
+				query:
+					'query($input: OrdinaryInquiry!) { getMyBoardArticles(input: $input) { list { _id } metaCounter { total } } }',
+				variables: { input: { page: 1, limit: 10 } },
+			});
+		expect((result.body as Result).errors?.[0].extensions?.originalError?.statusCode).toBe(401);
+		expect(await snapshot()).toBe(before);
+	});
+	it('OWNER LIST leaves public member-filtered listing available and unchanged', async () => {
+		const foreign = await articles.create({ ...valid(), memberId: other._id });
+		await articles.create({ ...valid(), memberId: other._id, articleStatus: BoardArticleStatus.DELETE });
+		const before = await snapshot();
+		const result = await gql<BoardArticles>(
+			'query($input: BoardArticlesInquiry!) { getBoardArticles(input: $input) { list { _id } metaCounter { total } } }',
+			{ input: { page: 1, limit: 10, search: { memberId: other._id.toHexString() } } },
+			null,
+		);
+		expect(result.errors).toBeUndefined();
+		expect(result.data?.getBoardArticles).toEqual({
+			list: [{ _id: foreign._id.toHexString() }],
+			metaCounter: [{ total: 1 }],
+		});
+		expect(await snapshot()).toBe(before);
+	});
+
 	it.each([250, 251, 5000])('UPDATE accepts %i content characters and atomically advances revision', async (length) => {
 		const result = success(await edit({ articleContent: 'a'.repeat(length) }), 'updateBoardArticle');
 		expect(result.articleContent).toHaveLength(length);
@@ -509,7 +663,7 @@ describe('Community authoring against disposable GraphQL and MongoDB', () => {
 		await rejected(() => edit(patch, admin, true));
 	});
 
-	it('SCHEMA adds only owner lookup, output revision and optional shared-input revision', () => {
+	it('SCHEMA preserves article revisions and narrow authenticated owner lookups', () => {
 		const schema = app!.get(GraphQLSchemaHost).schema;
 		const output = schema.getType('BoardArticle');
 		expect(output && 'getFields' in output && String(output.getFields().articleRevision.type)).toBe('Int!');
@@ -525,6 +679,11 @@ describe('Community authoring against disposable GraphQL and MongoDB', () => {
 				.getFields()
 				.getMyBoardArticle.args.map((arg) => [arg.name, String(arg.type)]),
 		).toEqual([['articleId', 'String!']]);
+		const ownerListField = schema.getQueryType()!.getFields().getMyBoardArticles;
+		expect(String(ownerListField.type)).toBe('BoardArticles!');
+		expect(ownerListField.args.map((arg) => [arg.name, String(arg.type)])).toEqual([['input', 'OrdinaryInquiry!']]);
+		const inquiry = schema.getType('OrdinaryInquiry') as GraphQLInputObjectType;
+		expect(Object.keys(inquiry.getFields()).sort()).toEqual(['limit', 'page']);
 	});
 	it('PUBLIC list/detail remain ACTIVE-only with their existing data and engagement semantics', async () => {
 		const before = await snapshot();

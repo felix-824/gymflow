@@ -22,6 +22,7 @@ import { isArticleContent, isArticleTitle } from '../../libs/board-article.valid
 import { ViewGroup } from '../../libs/enums/view.enum';
 import { StatisticModifier, T } from '../../libs/types/common';
 import { BoardArticleUpdate } from '../../libs/dto/board-article/board-article.update';
+import { OrdinaryInquiry } from '../../libs/dto/common/inquiry';
 import { lookupAuthMemberLiked, lookupMember, shapeIntoMongoObjectId } from '../../libs/config';
 import { LikeService } from '../like/like.service';
 import { LikeGroup } from '../../libs/enums/like.enum';
@@ -146,6 +147,26 @@ export class BoardArticleService {
 			.exec();
 		if (!result) throw new NotFoundException(Message.NO_DATA_FOUND);
 		return result;
+	}
+
+	public async getMyBoardArticles(memberId: ObjectId, input: OrdinaryInquiry): Promise<BoardArticles> {
+		const match: T = { memberId, articleStatus: BoardArticleStatus.ACTIVE };
+		const sort: T = { createdAt: Direction.DESC, _id: Direction.DESC };
+		const result = await this.boardArticleModel
+			.aggregate<BoardArticles>([
+				{ $match: match },
+				{ $sort: sort },
+				{
+					$facet: {
+						list: [{ $skip: (input.page - 1) * input.limit }, { $limit: input.limit }],
+						metaCounter: [{ $count: 'total' }],
+					},
+				},
+			])
+			.read('primary')
+			.exec();
+		if (!result.length) throw new InternalServerErrorException(Message.NO_DATA_FOUND);
+		return result[0];
 	}
 
 	// Memberga tegishli ACTIVE article'ni yangilaydi,

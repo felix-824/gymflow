@@ -14,6 +14,7 @@ type ObjectId = Types.ObjectId;
 import { WithoutGuard } from '../auth/guards/without.guard';
 import { shapeIntoMongoObjectId } from '../../libs/config';
 import { BoardArticleUpdate } from '../../libs/dto/board-article/board-article.update';
+import { OrdinaryInquiry } from '../../libs/dto/common/inquiry';
 import { MemberType } from '../../libs/enums/member.enum';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -54,6 +55,15 @@ export class BoardArticleResolver {
 	): Promise<BoardArticle> {
 		const articleId = shapeIntoMongoObjectId(input);
 		return await this.boardArticleService.getMyBoardArticle(memberId, articleId);
+	}
+
+	@UseGuards(AuthGuard)
+	@Query(() => BoardArticles)
+	public async getMyBoardArticles(
+		@Args('input') input: OrdinaryInquiry,
+		@AuthMember('_id') memberId: ObjectId,
+	): Promise<BoardArticles> {
+		return await this.boardArticleService.getMyBoardArticles(memberId, input);
 	}
 	// Login qilgan member o‘z board article
 	//  ma’lumotlarini yangilaydi.

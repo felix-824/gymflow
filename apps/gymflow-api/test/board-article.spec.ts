@@ -199,4 +199,40 @@ describe('Community authoring Mongoose and direct service boundaries', () => {
 		expect(member.getMember).not.toHaveBeenCalled();
 		expect(like.checkLikeExistence).not.toHaveBeenCalled();
 	});
+	it('owner listing ignores supplied ownership/status/sorting and has no public side effects', async () => {
+		const row = { ...valid(), _id: owner, memberId: owner, articleStatus: 'ACTIVE', __v: 0 };
+		const list = { list: [row], metaCounter: [{ total: 1 }] };
+		const result = query([list]);
+		const read = jest.fn(() => result);
+		const aggregate = jest.fn(() => ({ ...result, read }));
+		const member = { getMember: jest.fn(), memberStatsEditor: jest.fn() },
+			view = { recordView: jest.fn() },
+			like = { checkLikeExistence: jest.fn() };
+		const service = new BoardArticleService(
+			dependency({ aggregate }),
+			dependency(member),
+			dependency(view),
+			dependency(like),
+		);
+		const inquiry = {
+			page: 2,
+			limit: 3,
+			memberId: new Types.ObjectId(),
+			articleStatus: BoardArticleStatus.DELETE,
+			sort: 'articleViews',
+			direction: 'ASC',
+			search: { memberId: new Types.ObjectId() },
+		};
+		await expect(service.getMyBoardArticles(owner, inquiry)).resolves.toEqual(list);
+		expect(aggregate).toHaveBeenCalledWith([
+			{ $match: { memberId: owner, articleStatus: BoardArticleStatus.ACTIVE } },
+			{ $sort: { createdAt: -1, _id: -1 } },
+			{ $facet: { list: [{ $skip: 3 }, { $limit: 3 }], metaCounter: [{ $count: 'total' }] } },
+		]);
+		expect(read).toHaveBeenCalledWith('primary');
+		expect(member.getMember).not.toHaveBeenCalled();
+		expect(member.memberStatsEditor).not.toHaveBeenCalled();
+		expect(view.recordView).not.toHaveBeenCalled();
+		expect(like.checkLikeExistence).not.toHaveBeenCalled();
+	});
 });

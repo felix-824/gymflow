@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
+import {
+	BadRequestException,
+	ConflictException,
+	Injectable,
+	InternalServerErrorException,
+	NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 type ObjectId = Types.ObjectId;
@@ -11,7 +17,8 @@ import {
 import { MemberService } from '../member/member.service';
 import { ViewService } from '../view/view.service';
 import { Direction, Message } from '../../libs/enums/common.enum';
-import { BoardArticleStatus } from '../../libs/enums/board-article.enum';
+import { BoardArticleCategory, BoardArticleStatus } from '../../libs/enums/board-article.enum';
+import { isArticleContent, isArticleTitle } from '../../libs/board-article.validation';
 import { ViewGroup } from '../../libs/enums/view.enum';
 import { StatisticModifier, T } from '../../libs/types/common';
 import { BoardArticleUpdate } from '../../libs/dto/board-article/board-article.update';
@@ -33,10 +40,17 @@ export class BoardArticleService {
 
 	// Yangi board article yaratadi va memberArticles sonini 1 taga oshiradi.
 	public async createBoardArticle(memberId: ObjectId, input: BoardArticleInput): Promise<BoardArticle> {
-		input.memberId = memberId;
+		if (!Object.values(BoardArticleCategory).includes(input.articleCategory))
+			throw new BadRequestException('Invalid article category');
+		const fields = this.articleUpdateFields(input, true);
 
 		try {
-			const result = await this.boardArticleModel.create(input);
+			const result = await this.boardArticleModel.create({
+				...fields,
+				articleCategory: input.articleCategory,
+				memberId,
+				articleStatus: BoardArticleStatus.ACTIVE,
+			});
 
 			await this.memberService.memberStatsEditor({
 				_id: memberId,
@@ -124,11 +138,24 @@ export class BoardArticleService {
 		return targetBoardArticle;
 	}
 
+	public async getMyBoardArticle(memberId: ObjectId, articleId: ObjectId): Promise<BoardArticle> {
+		const result = await this.boardArticleModel
+			.findOne({ _id: articleId, memberId, articleStatus: BoardArticleStatus.ACTIVE })
+			.read('primary')
+			.lean()
+			.exec();
+		if (!result) throw new NotFoundException(Message.NO_DATA_FOUND);
+		return result;
+	}
+
 	// Memberga tegishli ACTIVE article'ni yangilaydi,
 
 	//  DELETE bo‘lsa memberArticles sonini kamaytiradi.
 	public async updateBoardArticle(memberId: ObjectId, input: BoardArticleUpdate): Promise<BoardArticle> {
-		const { _id, articleStatus } = input;
+		const { _id, articleStatus, expectedRevision } = input;
+		this.assertRevision(expectedRevision);
+		if ('articleCategory' in input) throw new BadRequestException('Article category cannot be changed');
+		const fields = this.articleUpdateFields(input);
 
 		const result = await this.boardArticleModel
 			.findOneAndUpdate(
@@ -136,16 +163,18 @@ export class BoardArticleService {
 					_id: _id,
 					memberId: memberId,
 					articleStatus: BoardArticleStatus.ACTIVE,
+					__v: expectedRevision,
 				},
-				input,
+				{ $set: fields, $inc: { __v: 1 } },
 				{
 					new: true,
+					runValidators: true,
 				},
 			)
 			.exec();
 
 		if (!result) {
-			throw new InternalServerErrorException(Message.UPDATE_FAILED);
+			return await this.articleUpdateFailure(_id, expectedRevision, memberId);
 		}
 
 		if (articleStatus === BoardArticleStatus.DELETE) {
@@ -268,23 +297,28 @@ export class BoardArticleService {
 	// Admin ACTIVE board article'ni yangilaydi,
 	//  DELETE qilinsa memberArticles sonini 1 taga kamaytiradi.
 	public async updateBoardArticleByAdmin(input: BoardArticleUpdate): Promise<BoardArticle> {
-		const { _id, articleStatus } = input;
+		const { _id, articleStatus, expectedRevision } = input;
+		if (expectedRevision !== undefined) this.assertRevision(expectedRevision);
+		if ('articleCategory' in input) throw new BadRequestException('Article category cannot be changed');
+		const fields = this.articleUpdateFields(input);
 
 		const result = await this.boardArticleModel
 			.findOneAndUpdate(
 				{
 					_id: _id,
 					articleStatus: BoardArticleStatus.ACTIVE,
+					...(expectedRevision !== undefined ? { __v: expectedRevision } : {}),
 				},
-				input,
+				{ $set: fields, $inc: { __v: 1 } },
 				{
 					new: true,
+					runValidators: true,
 				},
 			)
 			.exec();
 
 		if (!result) {
-			throw new InternalServerErrorException(Message.UPDATE_FAILED);
+			return await this.articleUpdateFailure(_id, expectedRevision);
 		}
 
 		if (articleStatus === BoardArticleStatus.DELETE) {
@@ -296,6 +330,39 @@ export class BoardArticleService {
 		}
 
 		return result;
+	}
+
+	private assertRevision(revision: number | undefined): void {
+		if (!Number.isInteger(revision) || revision! < 0 || revision! >= 2147483647)
+			throw new BadRequestException('A valid expected article revision is required');
+	}
+
+	private articleUpdateFields(input: Partial<BoardArticleUpdate>, creating = false): Partial<BoardArticle> {
+		if ((creating || input.articleTitle !== undefined) && !isArticleTitle(input.articleTitle))
+			throw new BadRequestException('Article title must contain 3–50 meaningful characters');
+		if ((creating || input.articleContent !== undefined) && !isArticleContent(input.articleContent))
+			throw new BadRequestException('Article content must contain meaningful text and 3–5000 characters');
+		if (input.articleImage != null && typeof input.articleImage !== 'string')
+			throw new BadRequestException('Invalid article image');
+		if (input.articleStatus !== undefined && !Object.values(BoardArticleStatus).includes(input.articleStatus))
+			throw new BadRequestException('Invalid article status');
+		const fields: Partial<BoardArticle> = {};
+		for (const key of ['articleTitle', 'articleContent', 'articleImage', 'articleStatus'] as const) {
+			if (input[key] !== undefined) Object.assign(fields, { [key]: input[key] });
+		}
+		return fields;
+	}
+
+	private async articleUpdateFailure(_id: ObjectId, expectedRevision?: number, memberId?: ObjectId): Promise<never> {
+		const current = await this.boardArticleModel
+			.findOne({ _id, ...(memberId ? { memberId } : {}) })
+			.read('primary')
+			.select('__v')
+			.lean()
+			.exec();
+		if (current && expectedRevision !== undefined && current.__v !== expectedRevision)
+			throw new ConflictException('Article changed; reload before saving again');
+		throw new NotFoundException(Message.NO_DATA_FOUND);
 	}
 
 	// DELETE statusdagi board article'ni database butunlay o‘chiradi.

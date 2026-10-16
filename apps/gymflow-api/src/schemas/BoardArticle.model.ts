@@ -1,5 +1,6 @@
 import { Schema } from 'mongoose';
 import { BoardArticleCategory, BoardArticleStatus } from '../libs/enums/board-article.enum';
+import { isArticleContent, isArticleTitle } from '../libs/board-article.validation';
 
 const BoardArticleSchema = new Schema(
 	{
@@ -13,16 +14,19 @@ const BoardArticleSchema = new Schema(
 			type: String,
 			enum: BoardArticleStatus,
 			default: BoardArticleStatus.ACTIVE,
+			required: true,
 		},
 
 		articleTitle: {
 			type: String,
 			required: true,
+			validate: isArticleTitle,
 		},
 
 		articleContent: {
 			type: String,
 			required: true,
+			validate: isArticleContent,
 		},
 
 		articleImage: {

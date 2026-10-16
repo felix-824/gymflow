@@ -1,5 +1,5 @@
 import { Field, InputType, Int } from '@nestjs/graphql';
-import { IsIn, IsNotEmpty, IsOptional, Length, Min } from 'class-validator';
+import { IsIn, IsNotEmpty, IsOptional, IsString, Length, Min } from 'class-validator';
 import { Types } from 'mongoose';
 type ObjectId = Types.ObjectId;
 import { BoardArticleCategory, BoardArticleStatus } from '../../enums/board-article.enum';
@@ -13,18 +13,21 @@ export class BoardArticleInput {
 	articleCategory: BoardArticleCategory;
 
 	@IsNotEmpty()
+	@IsString()
 	@Length(3, 50)
 	@Field(() => String)
 	articleTitle: string;
 
 	@IsNotEmpty()
+	@IsString()
 	@Length(3, 5000)
 	@Field(() => String)
 	articleContent: string;
 
 	@IsOptional()
+	@IsString()
 	@Field(() => String, { nullable: true })
-	articleImage?: string;
+	articleImage?: string | null;
 
 	memberId?: ObjectId;
 }

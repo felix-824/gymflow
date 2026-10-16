@@ -45,6 +45,16 @@ export class BoardArticleResolver {
 		const articleId = shapeIntoMongoObjectId(input);
 		return await this.boardArticleService.getBoardArticle(memberId, articleId);
 	}
+
+	@UseGuards(AuthGuard)
+	@Query(() => BoardArticle)
+	public async getMyBoardArticle(
+		@Args('articleId') input: string,
+		@AuthMember('_id') memberId: ObjectId,
+	): Promise<BoardArticle> {
+		const articleId = shapeIntoMongoObjectId(input);
+		return await this.boardArticleService.getMyBoardArticle(memberId, articleId);
+	}
 	// Login qilgan member o‘z board article
 	//  ma’lumotlarini yangilaydi.
 	@UseGuards(AuthGuard)

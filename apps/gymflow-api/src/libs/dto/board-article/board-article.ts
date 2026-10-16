@@ -10,6 +10,9 @@ export class BoardArticle {
 	@Field(() => String)
 	_id: ObjectId;
 
+	@Field(() => Int, { name: 'articleRevision' })
+	__v: number;
+
 	@Field(() => BoardArticleCategory)
 	articleCategory: BoardArticleCategory;
 
@@ -23,7 +26,7 @@ export class BoardArticle {
 	articleContent: string;
 
 	@Field(() => String, { nullable: true })
-	articleImage?: string;
+	articleImage?: string | null;
 
 	@Field(() => Int)
 	articleViews: number;

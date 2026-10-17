@@ -1,4 +1,7 @@
+import { Request, Response } from 'express';
 import { Member } from '../dto/member/member';
+
 export interface GraphQLAuthContext {
-	req: { headers: { authorization?: string }; body?: { authMember?: Member | null } };
+	req: Request & { body: { authMember?: Member | null } };
+	res: Response;
 }

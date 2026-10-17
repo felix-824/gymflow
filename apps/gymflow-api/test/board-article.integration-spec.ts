@@ -1,3 +1,4 @@
+import { fixtureAccessToken } from './auth-session.fixture';
 import 'reflect-metadata';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -40,14 +41,14 @@ describe('Community authoring against disposable GraphQL and MongoDB', () => {
 	let user: Member, other: Member, trainer: Member, admin: Member;
 	let article: BoardArticle;
 	const previousDownload = process.env.MONGOMS_RUNTIME_DOWNLOAD;
-	const token = (member: Member) => app!.get(JwtService).sign({ sub: member._id.toHexString() });
+	const token = (member: Member) => fixtureAccessToken(member, app);
 	const gql = async <T = ArticleResult>(
 		query: string,
 		variables: object,
 		viewer: Member | null = user,
 	): Promise<Result<T>> => {
-		const operation = request(app!.getHttpServer() as Server).post('/graphql');
-		if (viewer) operation.set('Authorization', 'Bearer ' + token(viewer));
+		const operation = request(app!.getHttpServer() as Server).post('/graphql').set('Apollo-Require-Preflight', 'true');
+		if (viewer) operation.set('Authorization', 'Bearer ' + (await token(viewer)));
 		const result = await operation.send({ query, variables });
 		expect([200, 400]).toContain(result.status);
 		return result.body as Result<T>;
@@ -110,7 +111,7 @@ describe('Community authoring against disposable GraphQL and MongoDB', () => {
 				GraphQLModule.forRoot<ApolloDriverConfig>({
 					driver: ApolloDriver,
 					autoSchemaFile: true,
-					context: ({ req }: GraphQLAuthContext) => ({ req }),
+					context: ({ req, res }: GraphQLAuthContext) => ({ req, res }),
 				}),
 			],
 		})
@@ -423,7 +424,7 @@ describe('Community authoring against disposable GraphQL and MongoDB', () => {
 					});
 		const before = await snapshot();
 		const result = await request(app!.getHttpServer() as Server)
-			.post('/graphql')
+			.post('/graphql').set('Apollo-Require-Preflight', 'true')
 			.set('Authorization', 'Bearer ' + bearer)
 			.send({
 				query:

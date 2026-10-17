@@ -1,3 +1,4 @@
+import { fixtureAccessToken } from './auth-session.fixture';
 import 'reflect-metadata';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -88,9 +89,9 @@ describe('TRAINER reservation lifecycle against real GraphQL and disposable repl
 	let pt: Program, group: Program, otherPt: Program;
 	const previousDownload = process.env.MONGOMS_RUNTIME_DOWNLOAD;
 	const requestGraphQL = async (query: string, variables: object, viewer: Member | null = trainer): Promise<Result> => {
-		const operation = request(app!.getHttpServer() as Server).post('/graphql');
+		const operation = request(app!.getHttpServer() as Server).post('/graphql').set('Apollo-Require-Preflight', 'true');
 		if (viewer)
-			operation.set('Authorization', 'Bearer ' + app!.get(JwtService).sign({ sub: viewer._id.toHexString() }));
+			operation.set('Authorization', 'Bearer ' + (await fixtureAccessToken(viewer, app)));
 		const response = await operation.send({ query, variables });
 		expect([200, 400]).toContain(response.status);
 		return response.body as Result;
@@ -163,7 +164,7 @@ describe('TRAINER reservation lifecycle against real GraphQL and disposable repl
 				GraphQLModule.forRoot<ApolloDriverConfig>({
 					driver: ApolloDriver,
 					autoSchemaFile: true,
-					context: ({ req }: GraphQLAuthContext) => ({ req }),
+					context: ({ req, res }: GraphQLAuthContext) => ({ req, res }),
 				}),
 			],
 		})
@@ -365,7 +366,7 @@ describe('TRAINER reservation lifecycle against real GraphQL and disposable repl
 			[updateMutation, { input: { _id: String(new Types.ObjectId()), reservationStatus: 'CONFIRMED' } }],
 		] as const) {
 			const response = await request(app!.getHttpServer() as Server)
-				.post('/graphql')
+				.post('/graphql').set('Apollo-Require-Preflight', 'true')
 				.set('Authorization', 'Bearer ' + token)
 				.send({ query, variables });
 			failed(response.body as Result);

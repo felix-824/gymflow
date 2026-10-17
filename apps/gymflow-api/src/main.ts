@@ -4,6 +4,8 @@ import { ValidationPipe } from '@nestjs/common';
 import { LoggingInterceptor } from './libs/interceptor/Logging.interceptor';
 import {graphqlUploadExpress} from "graphql-upload";
 import * as express from 'express';
+import { ConfigService } from '@nestjs/config';
+import { authConfiguration } from './libs/auth.config';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -15,7 +17,7 @@ async function bootstrap() {
   app.useGlobalInterceptors(new LoggingInterceptor());
 
    // Frontend boshqa domain yoki portdan backendga murojaat qilishiga ruxsat beradi.
-  app.enableCors({ origin: true, credentials: true});
+  app.enableCors({ origin: authConfiguration(app.get(ConfigService)).allowedOrigins, credentials: true });
 
  // GraphQL orqali fayl upload qilishni sozlaydi.
   app.use(graphqlUploadExpress({ maxFileSize: 15000000, maxFiles: 10 }));

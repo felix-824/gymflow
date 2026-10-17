@@ -1,3 +1,4 @@
+import './auth-session.fixture';
 import 'reflect-metadata';
 import { Test, TestingModule } from '@nestjs/testing';
 import { MongooseModule, getConnectionToken, getModelToken } from '@nestjs/mongoose';

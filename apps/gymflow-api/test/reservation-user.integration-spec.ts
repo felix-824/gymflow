@@ -1,3 +1,4 @@
+import { fixtureAccessToken } from './auth-session.fixture';
 import 'reflect-metadata';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -71,9 +72,9 @@ describe('USER reservation read/cancel against real disposable GraphQL and Mongo
 	let pt: Program, group: Program, otherPt: Program;
 	const previousDownload = process.env.MONGOMS_RUNTIME_DOWNLOAD;
 	const requestGraphQL = async (query: string, variables: object, viewer: Member | null = user): Promise<Result> => {
-		const operation = request(app!.getHttpServer() as Server).post('/graphql');
+		const operation = request(app!.getHttpServer() as Server).post('/graphql').set('Apollo-Require-Preflight', 'true');
 		if (viewer)
-			operation.set('Authorization', 'Bearer ' + app!.get(JwtService).sign({ sub: viewer._id.toHexString() }));
+			operation.set('Authorization', 'Bearer ' + (await fixtureAccessToken(viewer, app)));
 		const response = await operation.send({ query, variables });
 		expect([200, 400]).toContain(response.status);
 		return response.body as Result;
@@ -146,7 +147,7 @@ describe('USER reservation read/cancel against real disposable GraphQL and Mongo
 				GraphQLModule.forRoot<ApolloDriverConfig>({
 					driver: ApolloDriver,
 					autoSchemaFile: true,
-					context: ({ req }: GraphQLAuthContext) => ({ req }),
+					context: ({ req, res }: GraphQLAuthContext) => ({ req, res }),
 				}),
 			],
 		})

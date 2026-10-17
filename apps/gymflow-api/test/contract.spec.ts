@@ -1,3 +1,4 @@
+import './auth-session.fixture';
 import 'reflect-metadata';
 import { Global, Module } from '@nestjs/common';
 import { Test } from '@nestjs/testing';

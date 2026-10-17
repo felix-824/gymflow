@@ -1,3 +1,4 @@
+import { fixtureAccessToken } from './auth-session.fixture';
 import 'reflect-metadata';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -54,7 +55,7 @@ describe('Availability public read against disposable MongoDB and real GraphQL',
 		input: ProgramAvailabilityInquiry = { programId: pt._id.toHexString(), reservationDate: date },
 		token?: string,
 	): Promise<Result> => {
-		const operation = request(app!.getHttpServer() as Server).post('/graphql');
+		const operation = request(app!.getHttpServer() as Server).post('/graphql').set('Apollo-Require-Preflight', 'true');
 		if (token) operation.set('Authorization', 'Bearer ' + token);
 		return (await operation.send({ query: read, variables: { input } }).expect(200)).body as Result;
 	};
@@ -92,7 +93,7 @@ describe('Availability public read against disposable MongoDB and real GraphQL',
 				GraphQLModule.forRoot<ApolloDriverConfig>({
 					driver: ApolloDriver,
 					autoSchemaFile: true,
-					context: ({ req }: GraphQLAuthContext) => ({ req }),
+					context: ({ req, res }: GraphQLAuthContext) => ({ req, res }),
 				}),
 			],
 		})
@@ -304,8 +305,8 @@ describe('Availability public read against disposable MongoDB and real GraphQL',
 			);
 			return JSON.stringify(documents);
 		};
+		const token = await fixtureAccessToken(user, app);
 		const before = await snapshot();
-		const token = app!.get(JwtService).sign({ sub: user._id.toHexString() });
 		const guest = await query();
 		const authenticated = await query(undefined, token);
 		expect(guest.errors).toBeUndefined();
@@ -314,7 +315,7 @@ describe('Availability public read against disposable MongoDB and real GraphQL',
 		expect(authenticated.data).toEqual(guest.data);
 		expect(await snapshot()).toBe(before);
 		const ownSchedule = await request(app!.getHttpServer() as Server)
-			.post('/graphql')
+			.post('/graphql').set('Apollo-Require-Preflight', 'true')
 			.send({ query: '{ getMyTrainerSchedule { dayOfWeek } }' })
 			.expect(200);
 		expect((ownSchedule.body as Result).errors).toBeDefined();

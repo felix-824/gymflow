@@ -1,3 +1,4 @@
+import { fixtureAccessToken } from './auth-session.fixture';
 import 'reflect-metadata';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -74,7 +75,7 @@ describe('Member privacy boundary against disposable MongoDB', () => {
 				GraphQLModule.forRoot<ApolloDriverConfig>({
 					driver: ApolloDriver,
 					autoSchemaFile: true,
-					context: ({ req }: GraphQLAuthContext) => ({ req }),
+					context: ({ req, res }: GraphQLAuthContext) => ({ req, res }),
 				}),
 			],
 		})
@@ -145,8 +146,8 @@ describe('Member privacy boundary against disposable MongoDB', () => {
 
 	async function gql<T = Record<string, unknown>>(query: string, account?: Member) {
 		if (!app) throw new Error('Fixture not initialized');
-		const req = request(app.getHttpServer() as Server).post('/graphql');
-		if (account) req.set('Authorization', 'Bearer ' + (await auth.createToken(account)));
+		const req = request(app.getHttpServer() as Server).post('/graphql').set('Apollo-Require-Preflight', 'true');
+		if (account) req.set('Authorization', 'Bearer ' + (await fixtureAccessToken(account, app)));
 		const response = await req.send({ query });
 		expect([200, 400]).toContain(response.status);
 		return response.body as { data?: T; errors?: { message: string }[] };
@@ -239,7 +240,7 @@ describe('Member privacy boundary against disposable MongoDB', () => {
 			memberPhone: 'new-private',
 			memberPassword: password,
 		});
-		expect(created.accessToken).toBeTruthy();
+		expect(created.accessToken).toBeUndefined();
 		for (const member of [
 			created,
 			await memberService.login({ memberNick: created.memberNick, memberPassword: password }),

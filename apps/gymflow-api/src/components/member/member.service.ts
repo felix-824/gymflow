@@ -42,10 +42,8 @@ export class MemberService {
 		input.memberPassword = await this.authService.hashPassword(input.memberPassword);
 		try {
 			const result = await this.memberModel.create(input);
-			result.accessToken = await this.authService.createToken(result);
 			return ownerMemberData(result);
-		} catch (err) {
-			if (err instanceof Error) console.log('Error, Service.model:', err.message);
+		} catch {
 			throw new BadRequestException(Message.USED_MEMBER_NICK_OR_PHONE);
 		}
 	}
@@ -66,7 +64,6 @@ export class MemberService {
 		const isMatch = await this.authService.comparePasswords(input.memberPassword, response.memberPassword!);
 		if (!isMatch) throw new InternalServerErrorException(Message.WRONG_PASSWORD);
 
-		response.accessToken = await this.authService.createToken(response);
 		return ownerMemberData(response);
 	}
 
@@ -94,7 +91,7 @@ export class MemberService {
 			.exec();
 		if (!result) throw new InternalServerErrorException(Message.UPDATE_FAILED);
 
-		result.accessToken = await this.authService.createToken(result);
+		if (safe.memberPassword) await this.authService.revokeMemberSessions(memberId);
 		return ownerMemberData(result);
 	}
 
@@ -246,6 +243,8 @@ export class MemberService {
 			.select(adminMemberProjection)
 			.exec();
 		if (!result) throw new InternalServerErrorException(Message.UPDATE_FAILED);
+		if (input.memberPassword || input.memberStatus === MemberStatus.BLOCK || input.memberStatus === MemberStatus.DELETE)
+			await this.authService.revokeMemberSessions(input._id);
 
 		return result;
 	}

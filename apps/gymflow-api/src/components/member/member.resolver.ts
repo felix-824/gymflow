@@ -1,4 +1,4 @@
-import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
+import { Args, Context, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { MemberService } from './member.service';
 import { TrainersInquiry, LoginInput, MemberInput, MembersInquiry } from '../../libs/dto/member/member.input';
 import { Member, Members, OwnerMember, PublicMember, PublicMembers } from '../../libs/dto/member/member';
@@ -19,23 +19,63 @@ import { uploadDirectory } from '../../libs/upload';
 import { createWriteStream } from 'fs';
 import { pipeline } from 'node:stream/promises';
 import { Message } from '../../libs/enums/common.enum';
+import { AuthService } from '../auth/auth.service';
+import { AuthToken } from '../../libs/dto/member/auth-token';
+import type { GraphQLAuthContext } from '../../libs/types/auth-context';
+import { UnauthorizedException } from '@nestjs/common';
 
 @Resolver()
 export class MemberResolver {
 	//private readonly memberService: MemberService
 
-	constructor(private readonly memberService: MemberService) {}
+	constructor(
+		private readonly memberService: MemberService,
+		private readonly authService: AuthService,
+	) {}
 	//this.memberService = new MemberService();
 
 	@Mutation(() => OwnerMember)
-	public async signup(@Args('input') input: MemberInput): Promise<OwnerMember> {
-		console.log('Mutation: signup');
-		return await this.memberService.signup(input);
+	public async signup(@Args('input') input: MemberInput, @Context() context: GraphQLAuthContext): Promise<OwnerMember> {
+		this.authService.assertAuthRequest(context.req);
+		const member = await this.memberService.signup(input);
+		const credentials = await this.authService.createSession(member);
+		this.authService.setRefreshCookie(context.res, credentials);
+		return { ...member, accessToken: credentials.accessToken };
 	}
 	@Mutation(() => OwnerMember)
-	public async login(@Args('input') input: LoginInput): Promise<OwnerMember> {
-		console.log('Mutation: login');
-		return await this.memberService.login(input);
+	public async login(@Args('input') input: LoginInput, @Context() context: GraphQLAuthContext): Promise<OwnerMember> {
+		this.authService.assertAuthRequest(context.req);
+		const member = await this.memberService.login(input);
+		const credentials = await this.authService.createSession(member);
+		this.authService.setRefreshCookie(context.res, credentials);
+		return { ...member, accessToken: credentials.accessToken };
+	}
+
+	@Mutation(() => AuthToken)
+	public async refreshSession(@Context() context: GraphQLAuthContext): Promise<AuthToken> {
+		this.authService.assertAuthRequest(context.req);
+		try {
+			const credentials = await this.authService.refreshSession(this.authService.readRefreshCookie(context.req));
+			this.authService.setRefreshCookie(context.res, credentials);
+			return { accessToken: credentials.accessToken };
+		} catch (error) {
+			if (error instanceof UnauthorizedException) this.authService.clearRefreshCookie(context.res);
+			throw error;
+		}
+	}
+
+	@Mutation(() => Boolean)
+	public async logoutSession(@Context() context: GraphQLAuthContext): Promise<boolean> {
+		this.authService.assertAuthRequest(context.req);
+		try {
+			await this.authService.logoutSession(
+				this.authService.readRefreshCookie(context.req),
+				/^Bearer (\S+)$/i.exec(context.req.headers.authorization ?? '')?.[1],
+			);
+			return true;
+		} finally {
+			this.authService.clearRefreshCookie(context.res);
+		}
 	}
 
 	@UseGuards(AuthGuard)
@@ -53,7 +93,6 @@ export class MemberResolver {
 	@Query(() => String)
 	public checkAuth(@AuthMember('memberNick') memberNick: string): string {
 		console.log('Query: checkAuth');
-		console.log('memberNick:', memberNick);
 		return `Hi ${memberNick}`;
 	}
 

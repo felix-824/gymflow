@@ -8,6 +8,7 @@ import { AppResolver } from './app.resolver';
 import { ComponentsModule } from './components/components.module';
 import { DatabaseModule } from './database/database.module';
 import { T } from './libs/types/common';
+import type { GraphQLAuthContext } from './libs/types/auth-context';
 
 @Module({
 	imports: [
@@ -18,14 +19,16 @@ import { T } from './libs/types/common';
 			playground: true,
 			uploads: false,
 			autoSchemaFile: true,
+			context: ({ req, res }: GraphQLAuthContext) => ({ req, res }),
 			formatError: (error: T) => {
-				const graphQLFormattedError = {
-					code: error?.extensions.code,
-					message: 
-					 error?.extensions?.exception?.response?.message || error?.extensions?.response ?.message || error?.message,
+				const response = error?.extensions?.originalError ?? error?.extensions?.exception?.response ?? error?.extensions?.response;
+				const code = error?.extensions?.code;
+				console.warn('GraphQL operation failed', { code });
+				return {
+					code,
+					message: response?.message || error?.message,
+					extensions: { code, ...(typeof response?.reason === 'string' ? { reason: response.reason } : {}) },
 				};
-				console.log('GRAPHQL GLOBAL ERR:', graphQLFormattedError);
-				return graphQLFormattedError;
 			},
 		}), //REST > GraphQl
 

@@ -1,3 +1,4 @@
+import { authTestConfig } from './auth-session.fixture';
 import 'reflect-metadata';
 import { Reflector } from '@nestjs/core';
 import { Types } from 'mongoose';
@@ -27,21 +28,22 @@ const id = new Types.ObjectId();
 describe('Current-account authorization and safe member updates', () => {
 	it('uses only identity claims and reloads the current account role', async () => {
 		const jwt = {
-			signAsync: jest.fn(),
-			verifyAsync: jest.fn().mockResolvedValue({ sub: id.toHexString(), memberType: MemberType.TRAINER }),
+			signAsync: jest.fn().mockResolvedValue('issued-credential'),
+			verifyAsync: jest.fn().mockResolvedValue({ sub: id.toHexString(), sid: id.toHexString(), purpose: 'access', exp: Math.floor(Date.now() / 1000) + 900, iat: Math.floor(Date.now() / 1000) }),
 		};
 		const db = {
 			findOne: jest.fn(() => query({ _id: id, memberType: MemberType.USER, memberStatus: MemberStatus.ACTIVE })),
 		};
-		const auth = new AuthService(dependency<JwtService>(jwt), dependency(db));
+		const auth = new AuthService(dependency<JwtService>(jwt), dependency(db), dependency({ create: async () => ({}), findOne: () => query({ _id: id }) }), authTestConfig());
 		await auth.createToken(dependency<Member>({ _id: id, memberPhone: 'private', memberPassword: 'private' }));
-		expect(jwt.signAsync).toHaveBeenCalledWith({ sub: id.toHexString() });
+		expect(Object.keys(jwt.signAsync.mock.calls[0][0]).sort()).toEqual(['iat', 'purpose', 'sid', 'sub']);
+		expect(jwt.signAsync.mock.calls[0][1].expiresIn).toBe(900);
 		expect((await auth.verifyToken('token')).memberType).toBe(MemberType.USER);
 		expect(db.findOne).toHaveBeenCalledWith({ _id: id.toHexString(), memberStatus: MemberStatus.ACTIVE });
 	});
 	it('rejects missing/blocked accounts and invalid tokens', async () => {
-		const jwt = { verifyAsync: jest.fn().mockResolvedValue({ sub: id.toHexString() }) };
-		const auth = new AuthService(dependency<JwtService>(jwt), dependency({ findOne: () => query(null) }));
+		const jwt = { verifyAsync: jest.fn().mockResolvedValue({ sub: id.toHexString(), sid: id.toHexString(), purpose: 'access', exp: Math.floor(Date.now() / 1000) + 900, iat: Math.floor(Date.now() / 1000) }) };
+		const auth = new AuthService(dependency<JwtService>(jwt), dependency({ findOne: () => query(null) }), dependency({ findOne: () => query({ _id: id }) }), authTestConfig());
 		await expect(auth.verifyToken('old-token')).rejects.toThrow('active account');
 		jwt.verifyAsync.mockRejectedValue(new Error('invalid signature'));
 		await expect(auth.verifyToken('invalid')).rejects.toThrow('active account');
@@ -100,7 +102,7 @@ describe('Current-account authorization and safe member updates', () => {
 		const service = new MemberService(
 			dependency({ create }),
 			dependency({}),
-			dependency({ hashPassword, createToken: () => Promise.resolve('token') }),
+			dependency({ hashPassword }),
 			dependency({}),
 			dependency({}),
 		);
@@ -116,7 +118,7 @@ describe('Current-account authorization and safe member updates', () => {
 		const service = new MemberService(
 			dependency({ findOneAndUpdate }),
 			dependency({}),
-			dependency({ hashPassword: () => Promise.resolve('hashed'), createToken: () => Promise.resolve('token') }),
+			dependency({ hashPassword: () => Promise.resolve('hashed'), revokeMemberSessions: async () => {} }),
 			dependency({}),
 			dependency({}),
 		);
@@ -183,7 +185,7 @@ describe('Reusable engagement', () => {
 		},
 	);
 	it('awaits upload promises and propagates single/multiple stream failures', async () => {
-		const resolver = new MemberResolver(dependency({}));
+		const resolver = new MemberResolver(dependency({}), dependency({}));
 		const broken: FileUpload = {
 			filename: 'broken.png',
 			mimetype: 'image/png',

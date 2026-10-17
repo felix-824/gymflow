@@ -1,3 +1,4 @@
+import { fixtureAccessToken } from './auth-session.fixture';
 import 'reflect-metadata';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -56,15 +57,15 @@ describe('Reservation create against disposable replica-set GraphQL', () => {
 	let trainer: Member, otherTrainer: Member, user: Member, otherUser: Member, thirdUser: Member, admin: Member;
 	let pt: Program, group: Program, otherProgram: Program, otherPt: Program, online: Program;
 	const previousDownload = process.env.MONGOMS_RUNTIME_DOWNLOAD;
-	const token = (member: Member) => app!.get(JwtService).sign({ sub: member._id.toHexString() });
+	const token = (member: Member) => fixtureAccessToken(member, app);
 	const input = (program = pt, startTime = '09:00'): ReservationInput => ({
 		programId: program._id.toHexString(),
 		reservationDate: date,
 		startTime,
 	});
 	const query = async (value: object = input(), viewer: Member | null = user): Promise<Result> => {
-		const operation = request(app!.getHttpServer() as Server).post('/graphql');
-		if (viewer) operation.set('Authorization', 'Bearer ' + token(viewer));
+		const operation = request(app!.getHttpServer() as Server).post('/graphql').set('Apollo-Require-Preflight', 'true');
+		if (viewer) operation.set('Authorization', 'Bearer ' + (await token(viewer)));
 		const result = await operation.send({ query: mutation, variables: { input: value } });
 		expect([200, 400]).toContain(result.status);
 		return result.body as Result;
@@ -125,7 +126,7 @@ describe('Reservation create against disposable replica-set GraphQL', () => {
 				GraphQLModule.forRoot<ApolloDriverConfig>({
 					driver: ApolloDriver,
 					autoSchemaFile: true,
-					context: ({ req }: GraphQLAuthContext) => ({ req }),
+					context: ({ req, res }: GraphQLAuthContext) => ({ req, res }),
 				}),
 			],
 		})
@@ -218,8 +219,8 @@ describe('Reservation create against disposable replica-set GraphQL', () => {
 
 	const editQuery = async (patch: object, viewer: Member | null = trainer, byAdmin = false) => {
 		const name = byAdmin ? 'updateProgramByAdmin' : 'updateProgram';
-		const operation = request(app!.getHttpServer() as Server).post('/graphql');
-		if (viewer) operation.set('Authorization', 'Bearer ' + token(viewer));
+		const operation = request(app!.getHttpServer() as Server).post('/graphql').set('Apollo-Require-Preflight', 'true');
+		if (viewer) operation.set('Authorization', 'Bearer ' + (await token(viewer)));
 		const result = await operation.send({
 			query: `mutation($input: ProgramUpdate!) { ${name}(input: $input) { _id programType programDuration programLocation programAddress programCapacity programPrice programStatus } }`,
 			variables: { input: { _id: pt._id.toHexString(), ...patch } },
@@ -774,7 +775,7 @@ describe('Reservation create against disposable replica-set GraphQL', () => {
 		const created = success(await query());
 		const read = async () => {
 			const response = await request(app!.getHttpServer() as Server)
-				.post('/graphql')
+				.post('/graphql').set('Apollo-Require-Preflight', 'true')
 				.send({
 					query:
 						'query($input: ProgramAvailabilityInquiry!) { getProgramAvailability(input: $input) { startTime endTime } }',

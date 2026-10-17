@@ -1,3 +1,4 @@
+import { fixtureAccessToken } from './auth-session.fixture';
 import 'reflect-metadata';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -88,7 +89,7 @@ describe('GymFlow migration against disposable MongoDB', () => {
 				GraphQLModule.forRoot<ApolloDriverConfig>({
 					driver: ApolloDriver,
 					autoSchemaFile: true,
-					context: ({ req }: GraphQLAuthContext) => ({ req }),
+					context: ({ req, res }: GraphQLAuthContext) => ({ req, res }),
 				}),
 			],
 		})
@@ -136,8 +137,8 @@ describe('GymFlow migration against disposable MongoDB', () => {
 		account?: Member,
 	): Promise<GraphQLResponse<T>> {
 		if (!app) throw new Error('Test application not initialized');
-		const req = request(app.getHttpServer() as Server).post('/graphql');
-		if (account) req.set('Authorization', 'Bearer ' + (await auth.createToken(account)));
+		const req = request(app.getHttpServer() as Server).post('/graphql').set('Apollo-Require-Preflight', 'true');
+		if (account) req.set('Authorization', 'Bearer ' + (await fixtureAccessToken(account, app)));
 		const response = await req.send({ query, variables });
 		expect([200, 400]).toContain(response.status);
 		return response.body as GraphQLResponse<T>;

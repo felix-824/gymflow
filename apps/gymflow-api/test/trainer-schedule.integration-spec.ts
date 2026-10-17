@@ -1,3 +1,4 @@
+import { fixtureAccessToken } from './auth-session.fixture';
 import 'reflect-metadata';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -74,7 +75,7 @@ describe('Trainer schedules against disposable MongoDB replica set', () => {
 				GraphQLModule.forRoot<ApolloDriverConfig>({
 					driver: ApolloDriver,
 					autoSchemaFile: true,
-					context: ({ req }: GraphQLAuthContext) => ({ req }),
+					context: ({ req, res }: GraphQLAuthContext) => ({ req, res }),
 				}),
 			],
 		})
@@ -118,8 +119,8 @@ describe('Trainer schedules against disposable MongoDB replica set', () => {
 	});
 	async function gql<T>(query: string, variables: Record<string, unknown> = {}, account?: Member): Promise<Result<T>> {
 		if (!app) throw new Error('Test application not initialized');
-		const pending = request(app.getHttpServer() as Server).post('/graphql');
-		if (account) pending.set('Authorization', 'Bearer ' + (await auth.createToken(account)));
+		const pending = request(app.getHttpServer() as Server).post('/graphql').set('Apollo-Require-Preflight', 'true');
+		if (account) pending.set('Authorization', 'Bearer ' + (await fixtureAccessToken(account, app)));
 		const response = await pending.send({ query, variables });
 		expect([200, 400]).toContain(response.status);
 		return response.body as Result<T>;

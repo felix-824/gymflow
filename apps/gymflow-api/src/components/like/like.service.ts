@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { ClientSession, Model, Types } from 'mongoose';
 type ObjectId = Types.ObjectId;
 import { Like, MeLiked } from '../../libs/dto/like/like';
 import { LikeInput } from '../../libs/dto/like/like.input';
@@ -14,10 +14,17 @@ import { savedProgramStages } from '../../libs/program.aggregation';
 export class LikeService {
 	constructor(@InjectModel('Like') private readonly likeModel: Model<Like>) {}
 
-	async toggleLike(input: LikeInput): Promise<number> {
+	async toggleLike(input: LikeInput, session?: ClientSession): Promise<number> {
 		const search = { memberId: input.memberId, likeRefId: input.likeRefId, likeGroup: input.likeGroup };
-		const removed = await this.likeModel.findOneAndDelete(search).exec();
+		const query = this.likeModel.findOneAndDelete(search);
+		if (session) query.session(session);
+		const removed = await query.exec();
 		if (removed) return -1;
+		if (session) {
+			// The Program parent fence serializes toggles. Transaction errors must abort, not be swallowed.
+			await this.likeModel.create([input], { session });
+			return 1;
+		}
 		try {
 			await this.likeModel.create(input);
 			return 1;
@@ -26,9 +33,11 @@ export class LikeService {
 			throw error;
 		}
 	}
-	async checkLikeExistence(input: LikeInput): Promise<MeLiked[]> {
+	async checkLikeExistence(input: LikeInput, session?: ClientSession): Promise<MeLiked[]> {
 		const { memberId, likeRefId, likeGroup } = input;
-		const found = await this.likeModel.exists({ memberId, likeRefId, likeGroup }).exec();
+		const query = this.likeModel.exists({ memberId, likeRefId, likeGroup });
+		if (session) query.session(session);
+		const found = await query.exec();
 		return found ? [{ memberId, likeRefId, myFavorite: true }] : [];
 	}
 	async getFavoritePrograms(memberId: ObjectId, input: OrdinaryInquiry): Promise<Programs> {
@@ -39,7 +48,9 @@ export class LikeService {
 		for (const program of programs.list) program.meLiked = [{ memberId, likeRefId: program._id, myFavorite: true }];
 		return programs;
 	}
-	async removeProgramLikes(programId: ObjectId): Promise<void> {
-		await this.likeModel.deleteMany({ likeGroup: LikeGroup.PROGRAM, likeRefId: programId }).exec();
+	async removeProgramLikes(programId: ObjectId, session?: ClientSession): Promise<void> {
+		const query = this.likeModel.deleteMany({ likeGroup: LikeGroup.PROGRAM, likeRefId: programId });
+		if (session) query.session(session);
+		await query.exec();
 	}
 }

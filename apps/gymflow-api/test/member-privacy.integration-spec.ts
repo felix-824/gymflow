@@ -6,7 +6,7 @@ import { MongooseModule, getConnectionToken } from '@nestjs/mongoose';
 import { GraphQLModule, GraphQLSchemaHost } from '@nestjs/graphql';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { JwtService } from '@nestjs/jwt';
-import { MongoMemoryServer } from 'mongodb-memory-server';
+import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { Connection, Model, Types } from 'mongoose';
 import { GraphQLObjectType, GraphQLSchema, parse, validate } from 'graphql';
 import { resolve } from 'node:path';
@@ -47,7 +47,7 @@ const forbidden = [
 
 // Only this suite's loopback database is used; never import AppModule or application DB configuration.
 describe('Member privacy boundary against disposable MongoDB', () => {
-	let mongo: MongoMemoryServer | undefined;
+	let mongo: MongoMemoryReplSet | undefined;
 	let app: INestApplication | undefined;
 	let connection: Connection;
 	let schema: GraphQLSchema;
@@ -64,8 +64,8 @@ describe('Member privacy boundary against disposable MongoDB', () => {
 	const password = 'pass123';
 
 	beforeAll(async () => {
-		mongo = await MongoMemoryServer.create({
-			instance: { ip: '127.0.0.1', dbName: 'gymflow_member_privacy_' + new Types.ObjectId().toHexString() },
+		mongo = await MongoMemoryReplSet.create({
+			replSet: { count: 1, storageEngine: 'wiredTiger', ip: '127.0.0.1', dbName: 'gymflow_member_privacy_' + new Types.ObjectId().toHexString() },
 			binary: { version: '8.2.6', downloadDir: resolve('.tmp/mongodb-binaries') },
 		});
 		const module = await Test.createTestingModule({

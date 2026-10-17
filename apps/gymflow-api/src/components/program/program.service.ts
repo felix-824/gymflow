@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { ClientSession, Model, Types, mongo } from 'mongoose';
 type ObjectId = Types.ObjectId;
 import {
 	AllProgramsInquiry,
@@ -18,6 +18,7 @@ import { ViewService } from '../view/view.service';
 import { LikeService } from '../like/like.service';
 import { ProgramStatus, ProgramType } from '../../libs/enums/program.enum';
 import { Reservation } from '../../libs/dto/reservation/reservation';
+import { Review } from '../../libs/dto/review/review';
 import { capacityOccupyingStatuses, getSeoulDateTime } from '../../libs/availability';
 import { LikeGroup } from '../../libs/enums/like.enum';
 import { ViewGroup } from '../../libs/enums/view.enum';
@@ -50,6 +51,7 @@ export class ProgramService {
 		private readonly likeService: LikeService,
 		@InjectModel('Reservation')
 		private readonly reservationModel: Model<Reservation>,
+		@InjectModel('Review') private readonly reviewModel: Model<Review>,
 	) {}
 
 	public async createProgram(memberId: ObjectId, input: ProgramInput): Promise<Program> {
@@ -69,35 +71,57 @@ export class ProgramService {
 		return Object.fromEntries(editable.filter((key) => input[key] !== undefined).map((key) => [key, input[key]]));
 	}
 
-	private async visibleProgram(programId: ObjectId): Promise<Program> {
-		const [program] = await this.programModel
-			.aggregate<Program>([{ $match: { _id: programId } }, ...programOwnerStages(true)])
-			.exec();
+	private async visibleProgram(programId: ObjectId, session?: ClientSession): Promise<Program> {
+		if (session) {
+			// A real parent write serializes Program engagement with catalog edits and hard removal.
+			const fenced = await this.programModel
+				.findOneAndUpdate(
+					{ _id: programId, programStatus: ProgramStatus.ACTIVE },
+					{ $inc: { __v: 1 } },
+					{ session, new: true, timestamps: false },
+				)
+				.select('_id')
+				.lean()
+				.exec();
+			if (!fenced) throw new NotFoundException('Program not found');
+		}
+		const query = this.programModel.aggregate<Program>([{ $match: { _id: programId } }, ...programOwnerStages(true)]);
+		if (session) query.session(session);
+		const [program] = await query.exec();
 		if (!program) throw new NotFoundException('Program not found');
 		return program;
 	}
 
 	async getProgram(memberId: ObjectId | null, programId: ObjectId): Promise<Program> {
-		const program = await this.visibleProgram(programId);
-		if (memberId) {
-			const recorded = await this.viewService.recordView({
-				memberId,
-				viewRefId: programId,
-				viewGroup: ViewGroup.PROGRAM,
-			});
-			if (recorded) {
-				const updated = await this.programModel
-					.findByIdAndUpdate(programId, { $inc: { programViews: 1 } }, { new: true })
-					.exec();
-				program.programViews = updated?.programViews ?? program.programViews;
-			}
-			program.meLiked = await this.likeService.checkLikeExistence({
-				memberId,
-				likeRefId: programId,
-				likeGroup: LikeGroup.PROGRAM,
-			});
+		if (!memberId) return this.visibleProgram(programId);
+		try {
+			return await this.programModel.db.transaction(
+				async (session) => {
+					const program = await this.visibleProgram(programId, session);
+					const recorded = await this.viewService.recordView(
+						{ memberId, viewRefId: programId, viewGroup: ViewGroup.PROGRAM },
+						session,
+					);
+					if (recorded) {
+						const updated = await this.programModel
+							.findByIdAndUpdate(programId, { $inc: { programViews: 1 } }, { session, new: true })
+							.exec();
+						if (!updated) throw new NotFoundException('Program not found');
+						program.programViews = updated.programViews;
+					}
+					program.meLiked = await this.likeService.checkLikeExistence(
+						{ memberId, likeRefId: programId, likeGroup: LikeGroup.PROGRAM },
+						session,
+					);
+					return program;
+				},
+				{ readPreference: 'primary', readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } },
+			);
+		} catch (error: unknown) {
+			if (error instanceof mongo.MongoServerError && error.hasErrorLabel('TransientTransactionError'))
+				throw new ConflictException('Program changed; reload before retrying');
+			throw error;
 		}
-		return program;
 	}
 
 	async updateProgram(memberId: ObjectId, input: ProgramUpdate): Promise<Program> {
@@ -290,29 +314,62 @@ export class ProgramService {
 		return this.viewService.getVisitedPrograms(memberId, input);
 	}
 	async likeTargetProgram(memberId: ObjectId, programId: ObjectId): Promise<Program> {
-		await this.visibleProgram(programId);
-		const modifier = await this.likeService.toggleLike({
-			memberId,
-			likeRefId: programId,
-			likeGroup: LikeGroup.PROGRAM,
-		});
-		const program = await this.programModel
-			.findByIdAndUpdate(programId, { $inc: { programLikes: modifier } }, { new: true })
-			.exec();
-		if (!program) throw new NotFoundException('Program not found');
-		return program;
+		try {
+			return await this.programModel.db.transaction(
+				async (session) => {
+					await this.visibleProgram(programId, session);
+					const modifier = await this.likeService.toggleLike(
+						{ memberId, likeRefId: programId, likeGroup: LikeGroup.PROGRAM },
+						session,
+					);
+					const program = await this.programModel
+						.findByIdAndUpdate(programId, { $inc: { programLikes: modifier } }, { session, new: true })
+						.exec();
+					if (!program) throw new NotFoundException('Program not found');
+					return program;
+				},
+				{ readPreference: 'primary', readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } },
+			);
+		} catch (error: unknown) {
+			if (error instanceof mongo.MongoServerError && error.hasErrorLabel('TransientTransactionError'))
+				throw new ConflictException('Program changed; reload before retrying');
+			throw error;
+		}
 	}
 	async removeProgramByAdmin(programId: ObjectId): Promise<Program> {
-		const program = await this.programModel.findOne({ _id: programId, programStatus: ProgramStatus.DELETE }).exec();
-		if (!program) throw new NotFoundException('Soft-deleted program not found');
-		// Cleanup first: a failure leaves a soft-deleted parent so the operation can be retried.
-		await this.likeService.removeProgramLikes(programId);
-		await this.viewService.removeProgramViews(programId);
-		await this.notificationModel.deleteMany({ programId }).exec();
-		const removed = await this.programModel
-			.findOneAndDelete({ _id: programId, programStatus: ProgramStatus.DELETE })
-			.exec();
-		if (!removed) throw new ConflictException('Program already removed');
-		return removed;
+		try {
+			return await this.programModel.db.transaction(
+				async (session) => {
+					const program = await this.programModel
+						.findOneAndUpdate(
+							{ _id: programId, programStatus: ProgramStatus.DELETE },
+							{ $inc: { __v: 1 } },
+							{ session, new: true, timestamps: false },
+						)
+						.exec();
+					if (!program) throw new NotFoundException('Soft-deleted program not found');
+					const reservation = await this.reservationModel.exists({ programId }).session(session).exec();
+					const review = await this.reviewModel.exists({ programId }).session(session).exec();
+					if (reservation || review)
+						throw new BadRequestException(
+							'Program cannot be permanently deleted because reservation or review history exists.',
+						);
+					await this.likeService.removeProgramLikes(programId, session);
+					await this.viewService.removeProgramViews(programId, session);
+					await this.notificationModel.deleteMany({ programId }).session(session).exec();
+					const removed = await this.programModel
+						.findOneAndDelete({ _id: programId, programStatus: ProgramStatus.DELETE, __v: program.__v })
+						.session(session)
+						.exec();
+					if (!removed) throw new ConflictException('Program already removed');
+					return removed;
+				},
+				{ readPreference: 'primary', readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } },
+			);
+		} catch (error: unknown) {
+			if (error instanceof mongo.MongoServerError && error.hasErrorLabel('TransientTransactionError'))
+				throw new ConflictException('Program changed; reload before retrying');
+			throw error;
+		}
 	}
 }

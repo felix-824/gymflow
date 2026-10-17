@@ -6,7 +6,7 @@ import { MongooseModule, getConnectionToken } from '@nestjs/mongoose';
 import { GraphQLModule } from '@nestjs/graphql';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { JwtService } from '@nestjs/jwt';
-import { MongoMemoryServer } from 'mongodb-memory-server';
+import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { Connection, Model, Types } from 'mongoose';
 import request from 'supertest';
 import { Server } from 'node:http';
@@ -58,7 +58,7 @@ interface GraphQLResponse<T> {
 // This suite creates its own loopback server. It never reads an application database URI
 // or imports AppModule/DatabaseModule/ScheduleModule, and no cron jobs are started.
 describe('GymFlow migration against disposable MongoDB', () => {
-	let mongo: MongoMemoryServer | undefined;
+	let mongo: MongoMemoryReplSet | undefined;
 	let app: INestApplication | undefined;
 	let connection: Connection;
 	let programs: Model<Program>;
@@ -79,8 +79,8 @@ describe('GymFlow migration against disposable MongoDB', () => {
 	let admin: Member;
 
 	beforeAll(async () => {
-		mongo = await MongoMemoryServer.create({
-			instance: { ip: '127.0.0.1', dbName: 'gymflow_test_' + new Types.ObjectId().toHexString() },
+		mongo = await MongoMemoryReplSet.create({
+			replSet: { count: 1, storageEngine: 'wiredTiger', ip: '127.0.0.1', dbName: 'gymflow_test_' + new Types.ObjectId().toHexString() },
 			binary: { version: '8.2.6', downloadDir: resolve('.tmp/mongodb-binaries') },
 		});
 		const module = await Test.createTestingModule({

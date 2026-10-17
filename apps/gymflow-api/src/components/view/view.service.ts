@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { ClientSession, Model, Types } from 'mongoose';
 type ObjectId = Types.ObjectId;
 import { View } from '../../libs/dto/view/view';
 import { ViewInput } from '../../libs/dto/view/view.input';
@@ -13,7 +13,14 @@ import { savedProgramStages } from '../../libs/program.aggregation';
 @Injectable()
 export class ViewService {
 	constructor(@InjectModel('View') private readonly viewModel: Model<View>) {}
-	async recordView(input: ViewInput): Promise<View | null> {
+	async recordView(input: ViewInput, session?: ClientSession): Promise<View | null> {
+		if (session) {
+			// Under the Program fence, avoid duplicate inserts that would abort the transaction.
+			const existing = await this.viewModel.exists(input).session(session).exec();
+			if (existing) return null;
+			const [view] = await this.viewModel.create([input], { session });
+			return view;
+		}
 		try {
 			return await this.viewModel.create(input);
 		} catch (error) {
@@ -27,7 +34,9 @@ export class ViewService {
 			.exec();
 		return result ?? { list: [], metaCounter: [] };
 	}
-	async removeProgramViews(programId: ObjectId): Promise<void> {
-		await this.viewModel.deleteMany({ viewGroup: ViewGroup.PROGRAM, viewRefId: programId }).exec();
+	async removeProgramViews(programId: ObjectId, session?: ClientSession): Promise<void> {
+		const query = this.viewModel.deleteMany({ viewGroup: ViewGroup.PROGRAM, viewRefId: programId });
+		if (session) query.session(session);
+		await query.exec();
 	}
 }

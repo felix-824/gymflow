@@ -14,8 +14,8 @@ import { StatisticModifier } from '../src/libs/types/common';
 import { dependency, query } from './helpers';
 
 function primaryQuery<T>(value: T) {
-	const result = query(value);
-	return { ...result, read: () => result };
+	const result = { ...query(value), read: () => result, session: () => result };
+	return result;
 }
 
 const id = new Types.ObjectId();
@@ -88,20 +88,40 @@ describe('Program lifecycle and discovery', () => {
 	let state: State;
 	const mocks = () => ({
 		modelMock: {
+			db: {
+				transaction: jest.fn(async (action: (session: object) => Promise<unknown>) => {
+					const before = { ...state };
+					try {
+						return await action({});
+					} catch (error) {
+						state = before;
+						throw error;
+					}
+				}),
+			},
 			findOne: jest.fn((filter: { memberId?: Types.ObjectId }) =>
 				primaryQuery<State | null>(!filter.memberId || filter.memberId.equals(owner) ? { ...state } : null),
 			),
-			findOneAndUpdate: jest.fn((filter: { __v: number }, update: { $set: Partial<State> }) => {
-				if (filter.__v !== state.__v) return query<State | null>(null);
-				state = { ...state, ...update.$set, __v: state.__v + 1 };
-				return query<State | null>({ ...state });
-			}),
+			findOneAndUpdate: jest.fn(
+				(
+					filter: { __v?: number; programStatus?: ProgramStatus },
+					update: { $set?: Partial<State>; $inc?: { __v?: number } },
+				) => {
+					if (
+						(filter.__v !== undefined && filter.__v !== state.__v) ||
+						(filter.programStatus && filter.programStatus !== state.programStatus)
+					)
+						return primaryQuery<State | null>(null);
+					state = { ...state, ...update.$set, __v: state.__v + 1 };
+					return primaryQuery<State | null>({ ...state });
+				},
+			),
 			create: jest.fn((input: Partial<State>) => Promise.resolve({ ...state, ...input })),
 			aggregate: jest.fn((...args: [PipelineStage[]]) => {
 				void args;
 				return query([{ list: [], metaCounter: [] }]);
 			}),
-			findOneAndDelete: jest.fn(() => query(state)),
+			findOneAndDelete: jest.fn(() => primaryQuery(state)),
 		},
 		member: {
 			memberStatsEditor: jest.fn<Promise<void>, [StatisticModifier]>(() => Promise.resolve()),
@@ -114,8 +134,10 @@ describe('Program lifecycle and discovery', () => {
 			removeProgramLikes: jest.fn<Promise<void>, [Types.ObjectId]>(() => Promise.resolve()),
 		},
 		view: { getVisitedPrograms: jest.fn(), removeProgramViews: jest.fn() },
-		notifications: { deleteMany: jest.fn(() => query({})) },
+		notifications: { deleteMany: jest.fn(() => primaryQuery({})) },
+		reviewModel: { exists: jest.fn(() => primaryQuery<object | null>(null)) },
 		reservationModel: {
+			exists: jest.fn(() => primaryQuery<object | null>(null)),
 			aggregate: jest.fn(() => primaryQuery<{ protectedCount: number; maxOccupied: number }[]>([])),
 		},
 	});
@@ -126,6 +148,7 @@ describe('Program lifecycle and discovery', () => {
 	let notifications: ReturnType<typeof mocks>['notifications'];
 	let service: ProgramService;
 	let reservationModel: ReturnType<typeof mocks>['reservationModel'];
+	let reviewModel: ReturnType<typeof mocks>['reviewModel'];
 	beforeEach(() => {
 		state = {
 			...valid(),
@@ -136,7 +159,7 @@ describe('Program lifecycle and discovery', () => {
 			programLikes: 0,
 			programViews: 0,
 		};
-		({ modelMock, member, like, view, notifications, reservationModel } = mocks());
+		({ modelMock, member, like, view, notifications, reservationModel, reviewModel } = mocks());
 		service = new ProgramService(
 			dependency(modelMock),
 			dependency(notifications),
@@ -144,6 +167,7 @@ describe('Program lifecycle and discovery', () => {
 			dependency(view),
 			dependency(like),
 			dependency(reservationModel),
+			dependency(reviewModel),
 		);
 	});
 	it.each([
@@ -262,11 +286,26 @@ describe('Program lifecycle and discovery', () => {
 		expect(like.getFavoritePrograms).toHaveBeenCalledWith(owner, { page: 1, limit: 10 });
 		expect(modelMock.aggregate).not.toHaveBeenCalled();
 	});
+	it.each(['reservation', 'review'] as const)(
+		'rejects %s history before cleanup and rolls back the version fence',
+		async (kind) => {
+			state.programStatus = ProgramStatus.DELETE;
+			(kind === 'reservation' ? reservationModel : reviewModel).exists.mockReturnValue(primaryQuery({ _id: id }));
+			await expect(service.removeProgramByAdmin(id)).rejects.toThrow('reservation or review history exists');
+			expect(state.__v).toBe(0);
+			expect(reservationModel.exists).toHaveBeenCalledWith({ programId: id });
+			expect(reviewModel.exists).toHaveBeenCalledWith({ programId: id });
+			expect(like.removeProgramLikes).not.toHaveBeenCalled();
+			expect(view.removeProgramViews).not.toHaveBeenCalled();
+			expect(notifications.deleteMany).not.toHaveBeenCalled();
+			expect(modelMock.findOneAndDelete).not.toHaveBeenCalled();
+		},
+	);
 	it('cleans child records before hard delete, without another owner decrement', async () => {
 		state.programStatus = ProgramStatus.DELETE;
 		await service.removeProgramByAdmin(id);
-		expect(like.removeProgramLikes).toHaveBeenCalledWith(id);
-		expect(view.removeProgramViews).toHaveBeenCalledWith(id);
+		expect(like.removeProgramLikes).toHaveBeenCalledWith(id, expect.anything());
+		expect(view.removeProgramViews).toHaveBeenCalledWith(id, expect.anything());
 		expect(notifications.deleteMany).toHaveBeenCalledWith({ programId: id });
 		expect(member.memberStatsEditor).not.toHaveBeenCalled();
 	});

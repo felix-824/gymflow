@@ -122,7 +122,7 @@ describe('Admin Program hard-delete integrity', () => {
 		};
 	}
 	async function soft() {
-		await service.updateProgramByAdmin({ _id: program._id, programStatus: ProgramStatus.DELETE });
+		await service.updateProgramByAdmin({ expectedRevision: (await programs.findById(program._id).lean().exec())?.programRevision ?? 0, _id: program._id, programStatus: ProgramStatus.DELETE });
 	}
 	async function history(status = ReservationStatus.COMPLETED) {
 		return reservations.create({
@@ -198,7 +198,7 @@ describe('Admin Program hard-delete integrity', () => {
 		'rejects non-DELETE %s without changing state',
 		async (status) => {
 			if (status === ProgramStatus.PAUSED)
-				await service.updateProgramByAdmin({ _id: program._id, programStatus: status });
+				await service.updateProgramByAdmin({ expectedRevision: (await programs.findById(program._id).lean().exec())?.programRevision ?? 0, _id: program._id, programStatus: status });
 			await engagement();
 			const before = await snapshot();
 			expect((await remove()).errors![0].message).toBe('Soft-deleted program not found');
@@ -326,7 +326,7 @@ describe('Admin Program hard-delete integrity', () => {
 			await softEntered.promise;
 			resume.release();
 			await pending;
-			expect((await transition)?.message).toContain('Program changed');
+			expect((await transition)?.message).toContain('Program is busy');
 			await soft();
 			await service.removeProgramByAdmin(program._id);
 			await absent();
@@ -486,7 +486,7 @@ describe('Admin Program hard-delete integrity', () => {
 			await softEntered.promise;
 			resume.release();
 			expect(await pending).not.toBeInstanceOf(Error);
-			expect((await transition)?.message).toContain('Program changed');
+			expect((await transition)?.message).toContain('Program is busy');
 			await soft();
 			await expect(service.removeProgramByAdmin(program._id)).rejects.toThrow(blocked);
 			expect(await programs.exists({ _id: program._id })).not.toBeNull();

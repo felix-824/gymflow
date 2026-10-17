@@ -161,7 +161,7 @@ describe('GymFlow migration against disposable MongoDB', () => {
 		const programId = result.data?.createProgram._id;
 		const update = 'mutation($input: ProgramUpdate!) { updateProgram(input: $input) {_id programName} }';
 		expect(
-			(await gql(update, { input: { _id: programId, programName: 'Forbidden edit' } }, otherTrainer)).errors,
+			(await gql(update, { input: { expectedRevision: (await programs.findById(programId).lean().exec())?.programRevision ?? 0, _id: programId, programName: 'Forbidden edit' } }, otherTrainer)).errors,
 		).toBeDefined();
 		const staleToken = await auth.createToken(trainer);
 		await memberService.updateMemberByAdmin({ _id: trainer._id, memberType: MemberType.USER });
@@ -199,24 +199,24 @@ describe('GymFlow migration against disposable MongoDB', () => {
 
 	it('persists pause/resume/delete and allows one counter effect in concurrent status writes', async () => {
 		const program = await programService.createProgram(trainer._id, offering());
-		await programService.updateProgram(trainer._id, { _id: program._id, programStatus: ProgramStatus.PAUSED });
-		await programService.updateProgram(trainer._id, { _id: program._id, programStatus: ProgramStatus.PAUSED });
+		await programService.updateProgram(trainer._id, { expectedRevision: (await programs.findById(program._id).lean().exec())?.programRevision ?? 0, _id: program._id, programStatus: ProgramStatus.PAUSED });
+		await programService.updateProgram(trainer._id, { expectedRevision: (await programs.findById(program._id).lean().exec())?.programRevision ?? 0, _id: program._id, programStatus: ProgramStatus.PAUSED });
 		expect(await count()).toBe(0);
-		await programService.updateProgram(trainer._id, { _id: program._id, programStatus: ProgramStatus.ACTIVE });
+		await programService.updateProgram(trainer._id, { expectedRevision: (await programs.findById(program._id).lean().exec())?.programRevision ?? 0, _id: program._id, programStatus: ProgramStatus.ACTIVE });
 		const attempts = await Promise.allSettled([
-			programService.updateProgram(trainer._id, { _id: program._id, programStatus: ProgramStatus.PAUSED }),
-			programService.updateProgram(trainer._id, { _id: program._id, programStatus: ProgramStatus.PAUSED }),
+			programService.updateProgram(trainer._id, { expectedRevision: (await programs.findById(program._id).lean().exec())?.programRevision ?? 0, _id: program._id, programStatus: ProgramStatus.PAUSED }),
+			programService.updateProgram(trainer._id, { expectedRevision: (await programs.findById(program._id).lean().exec())?.programRevision ?? 0, _id: program._id, programStatus: ProgramStatus.PAUSED }),
 		]);
 		expect(attempts.some((attempt) => attempt.status === 'fulfilled')).toBe(true);
 		expect(await count()).toBe(0);
-		const removed = await programService.updateProgramByAdmin({
+		const removed = await programService.updateProgramByAdmin({ expectedRevision: (await programs.findById(program._id).lean().exec())?.programRevision ?? 0,
 			_id: program._id,
 			programStatus: ProgramStatus.DELETE,
 		});
 		expect(removed.deletedAt).toBeInstanceOf(Date);
 		expect((await programs.findById(program._id).lean().exec())?.deletedAt).toBeInstanceOf(Date);
 		await expect(
-			programService.updateProgram(trainer._id, { _id: program._id, programStatus: ProgramStatus.ACTIVE }),
+			programService.updateProgram(trainer._id, { expectedRevision: (await programs.findById(program._id).lean().exec())?.programRevision ?? 0, _id: program._id, programStatus: ProgramStatus.ACTIVE }),
 		).rejects.toThrow();
 		expect(await count()).toBe(0);
 	});
@@ -225,7 +225,7 @@ describe('GymFlow migration against disposable MongoDB', () => {
 		const visible = await programService.createProgram(trainer._id, offering('Visible strength'));
 		const paused = await programService.createProgram(trainer._id, offering('Paused strength'));
 		const hidden = await programService.createProgram(otherTrainer._id, offering('Hidden strength'));
-		await programService.updateProgram(trainer._id, { _id: paused._id, programStatus: ProgramStatus.PAUSED });
+		await programService.updateProgram(trainer._id, { expectedRevision: (await programs.findById(paused._id).lean().exec())?.programRevision ?? 0, _id: paused._id, programStatus: ProgramStatus.PAUSED });
 		await members.updateOne({ _id: otherTrainer._id }, { memberStatus: MemberStatus.BLOCK }).exec();
 		for (const program of [visible, paused, hidden]) {
 			await likeService.toggleLike({ memberId: user._id, likeRefId: program._id, likeGroup: LikeGroup.PROGRAM });
@@ -311,7 +311,7 @@ describe('GymFlow migration against disposable MongoDB', () => {
 	it('reconciles corrupted caches and repeatable ranks with real aggregation and pipeline updates', async () => {
 		const program = await programService.createProgram(trainer._id, offering());
 		const paused = await programService.createProgram(trainer._id, offering('Paused program'));
-		await programService.updateProgram(trainer._id, { _id: paused._id, programStatus: ProgramStatus.PAUSED });
+		await programService.updateProgram(trainer._id, { expectedRevision: (await programs.findById(paused._id).lean().exec())?.programRevision ?? 0, _id: paused._id, programStatus: ProgramStatus.PAUSED });
 		await programService.likeTargetProgram(user._id, program._id);
 		await programService.getProgram(user._id, program._id);
 		await programs.updateMany({}, { programRank: 999, programViews: 999, programLikes: 999 }).exec();
@@ -350,7 +350,7 @@ describe('GymFlow migration against disposable MongoDB', () => {
 			notificationDesc: 'Program liked',
 		});
 		await expect(programService.removeProgramByAdmin(program._id)).rejects.toThrow();
-		await programService.updateProgramByAdmin({ _id: program._id, programStatus: ProgramStatus.DELETE });
+		await programService.updateProgramByAdmin({ expectedRevision: (await programs.findById(program._id).lean().exec())?.programRevision ?? 0, _id: program._id, programStatus: ProgramStatus.DELETE });
 		const removal = await gql(
 			'mutation($id: String!) { removeProgramByAdmin(programId:$id) {_id} }',
 			{ id: program._id.toHexString() },

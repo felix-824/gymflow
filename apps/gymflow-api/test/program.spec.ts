@@ -80,6 +80,7 @@ describe('Program lifecycle and discovery', () => {
 		_id: Types.ObjectId;
 		memberId: Types.ObjectId;
 		__v: number;
+		programRevision: number;
 		programStatus: ProgramStatus;
 		programLikes: number;
 		programViews: number;
@@ -104,15 +105,21 @@ describe('Program lifecycle and discovery', () => {
 			),
 			findOneAndUpdate: jest.fn(
 				(
-					filter: { __v?: number; programStatus?: ProgramStatus },
-					update: { $set?: Partial<State>; $inc?: { __v?: number } },
+					filter: { __v?: number; programStatus?: ProgramStatus; programRevision?: number },
+					update: { $set?: Partial<State>; $inc?: { __v?: number; programRevision?: number } },
 				) => {
 					if (
 						(filter.__v !== undefined && filter.__v !== state.__v) ||
+						(filter.programRevision !== undefined && filter.programRevision !== state.programRevision) ||
 						(filter.programStatus && filter.programStatus !== state.programStatus)
 					)
 						return primaryQuery<State | null>(null);
-					state = { ...state, ...update.$set, __v: state.__v + 1 };
+					state = {
+						...state,
+						...update.$set,
+						__v: state.__v + 1,
+						programRevision: state.programRevision + (update.$inc?.programRevision ?? 0),
+					};
 					return primaryQuery<State | null>({ ...state });
 				},
 			),
@@ -155,6 +162,7 @@ describe('Program lifecycle and discovery', () => {
 			_id: id,
 			memberId: owner,
 			__v: 0,
+			programRevision: 0,
 			programStatus: ProgramStatus.ACTIVE,
 			programLikes: 0,
 			programViews: 0,
@@ -177,12 +185,15 @@ describe('Program lifecycle and discovery', () => {
 		{ programAddress: 'Busan gym' },
 	])('rejects protected sensitive changes before any write: %j', async (patch) => {
 		reservationModel.aggregate.mockReturnValue(primaryQuery([{ protectedCount: 1, maxOccupied: 1 }]));
-		await expect(service.updateProgram(owner, { _id: id, ...patch })).rejects.toThrow('upcoming reservations');
+		await expect(
+			service.updateProgram(owner, { expectedRevision: state.programRevision, _id: id, ...patch }),
+		).rejects.toThrow('upcoming reservations');
 		expect(modelMock.findOneAndUpdate).not.toHaveBeenCalled();
 		expect(member.memberStatsEditor).not.toHaveBeenCalled();
 	});
 	it('accepts unchanged/canonical values and price changes without a policy scan', async () => {
 		await service.updateProgram(owner, {
+			expectedRevision: state.programRevision,
 			_id: id,
 			...valid(),
 			programAddress: ' Seoul gym ',
@@ -193,20 +204,20 @@ describe('Program lifecycle and discovery', () => {
 	});
 	it('does not let ADMIN bypass protected edits', async () => {
 		reservationModel.aggregate.mockReturnValue(primaryQuery([{ protectedCount: 1, maxOccupied: 1 }]));
-		await expect(service.updateProgramByAdmin({ _id: id, programDuration: 30 })).rejects.toThrow(
-			'upcoming reservations',
-		);
+		await expect(
+			service.updateProgramByAdmin({ expectedRevision: state.programRevision, _id: id, programDuration: 30 }),
+		).rejects.toThrow('upcoming reservations');
 		expect(modelMock.findOneAndUpdate).not.toHaveBeenCalled();
 	});
 	it('checks capacity decreases against the maximum session and permits increases', async () => {
 		state.programType = ProgramType.GROUP_CLASS;
 		state.programCapacity = 8;
 		reservationModel.aggregate.mockReturnValue(primaryQuery([{ protectedCount: 9, maxOccupied: 5 }]));
-		await expect(service.updateProgram(owner, { _id: id, programCapacity: 4 })).rejects.toThrow(
-			'occupied session seats',
-		);
-		await service.updateProgram(owner, { _id: id, programCapacity: 5 });
-		await service.updateProgram(owner, { _id: id, programCapacity: 6 });
+		await expect(
+			service.updateProgram(owner, { expectedRevision: state.programRevision, _id: id, programCapacity: 4 }),
+		).rejects.toThrow('occupied session seats');
+		await service.updateProgram(owner, { expectedRevision: state.programRevision, _id: id, programCapacity: 5 });
+		await service.updateProgram(owner, { expectedRevision: state.programRevision, _id: id, programCapacity: 6 });
 		expect(state.programCapacity).toBe(6);
 	});
 	it('creates with authenticated ownership and ignores client counters/status', async () => {
@@ -228,29 +239,75 @@ describe('Program lifecycle and discovery', () => {
 		expect(modelMock.create).not.toHaveBeenCalled();
 	});
 	it('pauses, resumes, and deletes with exactly one counter delta per transition', async () => {
-		await service.updateProgram(owner, { _id: id, programStatus: ProgramStatus.PAUSED });
-		await service.updateProgram(owner, { _id: id, programStatus: ProgramStatus.PAUSED });
-		await service.updateProgram(owner, { _id: id, programName: 'Updated session' });
-		await service.updateProgram(owner, { _id: id, programStatus: ProgramStatus.ACTIVE });
-		const deleted = await service.updateProgram(owner, { _id: id, programStatus: ProgramStatus.DELETE });
+		await service.updateProgram(owner, {
+			expectedRevision: state.programRevision,
+			_id: id,
+			programStatus: ProgramStatus.PAUSED,
+		});
+		await service.updateProgram(owner, {
+			expectedRevision: state.programRevision,
+			_id: id,
+			programStatus: ProgramStatus.PAUSED,
+		});
+		await service.updateProgram(owner, {
+			expectedRevision: state.programRevision,
+			_id: id,
+			programName: 'Updated session',
+		});
+		await service.updateProgram(owner, {
+			expectedRevision: state.programRevision,
+			_id: id,
+			programStatus: ProgramStatus.ACTIVE,
+		});
+		const deleted = await service.updateProgram(owner, {
+			expectedRevision: state.programRevision,
+			_id: id,
+			programStatus: ProgramStatus.DELETE,
+		});
 		expect(deleted.deletedAt).toBeInstanceOf(Date);
 		expect(member.memberStatsEditor.mock.calls.map(([input]) => input.modifier)).toEqual([-1, 1, -1]);
-		await expect(service.updateProgram(owner, { _id: id, programStatus: ProgramStatus.ACTIVE })).rejects.toThrow();
+		await expect(
+			service.updateProgram(owner, {
+				expectedRevision: state.programRevision,
+				_id: id,
+				programStatus: ProgramStatus.ACTIVE,
+			}),
+		).rejects.toThrow();
 		expect(member.memberStatsEditor).toHaveBeenCalledTimes(3);
 	});
 	it('validates the merged document and rejects null required fields', async () => {
-		await expect(service.updateProgram(owner, { _id: id, programType: ProgramType.ONLINE })).rejects.toThrow();
 		await expect(
-			service.updateProgram(owner, { _id: id, programName: null } as unknown as ProgramUpdate),
+			service.updateProgram(owner, {
+				expectedRevision: state.programRevision,
+				_id: id,
+				programType: ProgramType.ONLINE,
+			}),
+		).rejects.toThrow();
+		await expect(
+			service.updateProgram(owner, {
+				expectedRevision: state.programRevision,
+				_id: id,
+				programName: null,
+			} as unknown as ProgramUpdate),
 		).rejects.toThrow();
 		expect(modelMock.findOneAndUpdate).not.toHaveBeenCalled();
 	});
 	it('denies another trainer and rejects stale concurrent edits without changing counters', async () => {
-		await expect(service.updateProgram(new Types.ObjectId(), { _id: id, programName: 'Other' })).rejects.toThrow();
+		await expect(
+			service.updateProgram(new Types.ObjectId(), {
+				expectedRevision: state.programRevision,
+				_id: id,
+				programName: 'Other',
+			}),
+		).rejects.toThrow();
 		modelMock.findOneAndUpdate.mockReturnValue(query(null));
-		await expect(service.updateProgram(owner, { _id: id, programStatus: ProgramStatus.PAUSED })).rejects.toThrow(
-			'Program changed',
-		);
+		await expect(
+			service.updateProgram(owner, {
+				expectedRevision: state.programRevision,
+				_id: id,
+				programStatus: ProgramStatus.PAUSED,
+			}),
+		).rejects.toThrow('Program is busy');
 		expect(member.memberStatsEditor).not.toHaveBeenCalled();
 	});
 	it('filters and escapes literal name search; rejects invalid ranges and sorting', async () => {

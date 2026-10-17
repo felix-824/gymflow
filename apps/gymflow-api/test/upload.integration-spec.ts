@@ -149,16 +149,16 @@ describe('Authenticated multipart and Program image round trips (disposable data
 			id = saved.data.createProgram._id;
 		const original = await Promise.all(five.map((image) => readFile(image)));
 		const retained = [five[0], five[1], five[2], five[4]];
-		expect((await gql(update, { input: { _id: id, programImages: retained } })).errors).toBeUndefined();
+		expect((await gql(update, { input: { expectedRevision: (await connection.model('Program').findById(id).lean().exec())?.programRevision ?? 0, _id: id, programImages: retained } })).errors).toBeUndefined();
 		expect((await owned(id)).programImages).toEqual(retained);
 		const replacement = (await upload(1)).body.data.imagesUploader[0];
 		expect(
-			(await gql(update, { input: { _id: id, programImages: [...retained, replacement] } })).errors,
+			(await gql(update, { input: { expectedRevision: (await connection.model('Program').findById(id).lean().exec())?.programRevision ?? 0, _id: id, programImages: [...retained, replacement] } })).errors,
 		).toBeUndefined();
 		expect((await owned(id)).programImages).toEqual([...retained, replacement]);
 		for (let index = 0; index < five.length; index++) expect(await readFile(five[index])).toEqual(original[index]);
 		expect(
-			(await gql(update, { input: { _id: id, programImages: [retained[1], retained[2], retained[3], replacement] } }))
+			(await gql(update, { input: { expectedRevision: (await connection.model('Program').findById(id).lean().exec())?.programRevision ?? 0, _id: id, programImages: [retained[1], retained[2], retained[3], replacement] } }))
 				.errors,
 		).toBeUndefined();
 		expect((await owned(id)).programImages[0]).toBe(five[1]);
@@ -169,7 +169,7 @@ describe('Authenticated multipart and Program image round trips (disposable data
 			id = saved.data.createProgram._id;
 		for (const invalid of [[], Array.from({ length: 6 }, () => images[0]), [' ']]) {
 			expect((await gql(create, { input: input(invalid) })).errors).toBeDefined();
-			expect((await gql(update, { input: { _id: id, programImages: invalid } })).errors).toBeDefined();
+			expect((await gql(update, { input: { expectedRevision: (await connection.model('Program').findById(id).lean().exec())?.programRevision ?? 0, _id: id, programImages: invalid } })).errors).toBeDefined();
 			expect((await owned(id)).programImages).toEqual(images);
 		}
 	});
@@ -222,10 +222,10 @@ describe('Authenticated multipart and Program image round trips (disposable data
 			reservationStatus: 'PENDING',
 		});
 		expect(
-			(await gql(update, { input: { _id: id, programImages: [images[0]], programDuration: 90 } })).errors,
+			(await gql(update, { input: { expectedRevision: (await connection.model('Program').findById(id).lean().exec())?.programRevision ?? 0, _id: id, programImages: [images[0]], programDuration: 90 } })).errors,
 		).toBeDefined();
-		expect((await gql(update, { input: { _id: id, programImages: [images[0]] } }, user)).errors).toBeDefined();
+		expect((await gql(update, { input: { expectedRevision: (await connection.model('Program').findById(id).lean().exec())?.programRevision ?? 0, _id: id, programImages: [images[0]] } }, user)).errors).toBeDefined();
 		expect((await owned(id)).programImages).toEqual(images);
-		expect((await gql(update, { input: { _id: id, programImages: [images[0]] } })).errors).toBeUndefined();
+		expect((await gql(update, { input: { expectedRevision: (await connection.model('Program').findById(id).lean().exec())?.programRevision ?? 0, _id: id, programImages: [images[0]] } })).errors).toBeUndefined();
 	});
 });

@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Model, Types, mongo } from 'mongoose';
 type ObjectId = Types.ObjectId;
@@ -42,7 +42,7 @@ const editable = [
 ] as const;
 
 @Injectable()
-export class ProgramService {
+export class ProgramService implements OnModuleInit {
 	constructor(
 		@InjectModel('Program') private readonly programModel: Model<Program>,
 		@InjectModel('Notification') private readonly notificationModel: Model<any>,
@@ -53,6 +53,14 @@ export class ProgramService {
 		private readonly reservationModel: Model<Reservation>,
 		@InjectModel('Review') private readonly reviewModel: Model<Review>,
 	) {}
+
+	async onModuleInit(): Promise<void> {
+		// Finish legacy rollout before this API accepts writes; native update preserves timestamps and __v.
+		await this.programModel.collection.updateMany(
+			{ programRevision: { $exists: false } },
+			{ $set: { programRevision: 0 } },
+		);
+	}
 
 	public async createProgram(memberId: ObjectId, input: ProgramInput): Promise<Program> {
 		const owner = await this.memberService.getMember(null, memberId);
@@ -133,10 +141,13 @@ export class ProgramService {
 	}
 
 	private async update(input: ProgramUpdate, memberId?: ObjectId): Promise<Program> {
+		if (!Number.isInteger(input.expectedRevision) || input.expectedRevision < 0 || input.expectedRevision >= 2147483647)
+			throw new BadRequestException('A valid expected Program revision is required');
 		const selector = { _id: input._id, ...(memberId ? { memberId } : {}) };
 		const current = await this.programModel.findOne(selector).read('primary').lean().exec();
 		if (!current || current.programStatus === ProgramStatus.DELETE)
 			throw new NotFoundException('Editable program not found');
+		if (current.programRevision !== input.expectedRevision) this.staleProgramEdit();
 		const status = input.programStatus === undefined ? current.programStatus : input.programStatus;
 		if (!Object.values(ProgramStatus).includes(status)) throw new BadRequestException('Invalid program status');
 		const fields = this.pickFields(input);
@@ -198,7 +209,12 @@ export class ProgramService {
 		}
 		const result = await this.programModel
 			.findOneAndUpdate(
-				{ ...selector, programStatus: current.programStatus, __v: current.__v },
+				{
+					...selector,
+					programStatus: current.programStatus,
+					__v: current.__v,
+					programRevision: input.expectedRevision,
+				},
 				{
 					$set: {
 						...fields,
@@ -206,16 +222,32 @@ export class ProgramService {
 						...(status === ProgramStatus.DELETE ? { deletedAt: new Date() } : {}),
 						...(status !== ProgramStatus.ACTIVE ? { programRank: 0 } : {}),
 					},
-					$inc: { __v: 1 },
+					$inc: { __v: 1, programRevision: 1 },
 				},
 				{ new: true, runValidators: true },
 			)
 			.exec();
-		if (!result) throw new ConflictException('Program changed; reload before retrying');
+		if (!result) {
+			const latest = await this.programModel.findOne(selector).read('primary').lean().exec();
+			if (!latest || latest.programStatus === ProgramStatus.DELETE)
+				throw new NotFoundException('Editable program not found');
+			if (latest.programRevision !== input.expectedRevision) this.staleProgramEdit();
+			throw new ConflictException({
+				message: 'Program is busy. Review the latest data before saving again.',
+				reason: 'PROGRAM_WRITE_CONTENTION',
+			});
+		}
 		const modifier = Number(status === ProgramStatus.ACTIVE) - Number(current.programStatus === ProgramStatus.ACTIVE);
 		if (modifier)
 			await this.memberService.memberStatsEditor({ _id: current.memberId, targetKey: 'memberPrograms', modifier });
 		return result;
+	}
+
+	private staleProgramEdit(): never {
+		throw new ConflictException({
+			message: 'Program has changed. Refresh and review the latest data.',
+			reason: 'PROGRAM_REVISION_CONFLICT',
+		});
 	}
 
 	private match(search: ProgramSearch): T {

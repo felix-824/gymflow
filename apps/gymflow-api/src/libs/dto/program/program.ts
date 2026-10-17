@@ -14,6 +14,7 @@ export class Program {
 	@Field(() => ProgramLocation) programLocation: ProgramLocation;
 	@Field(() => String) programName: string;
 	@Field(() => String, { nullable: true }) programAddress?: string | null;
+	@Field(() => Int) programRevision: number;
 	@Field(() => Int) programPrice: number;
 	@Field(() => Int) programDuration: number;
 	@Field(() => Int) programCapacity: number;

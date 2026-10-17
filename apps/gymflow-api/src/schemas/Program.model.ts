@@ -18,6 +18,7 @@ const ProgramSchema = new Schema(
 		programLocation: { type: String, enum: ProgramLocation, required: true },
 		programName: { type: String, required: true, minlength: 3, maxlength: 100 },
 		programAddress: { type: String, minlength: 3, maxlength: 100 },
+		programRevision: { ...integer(0), default: 0 },
 		programPrice: integer(0),
 		programDuration: integer(1),
 		programCapacity: integer(1),

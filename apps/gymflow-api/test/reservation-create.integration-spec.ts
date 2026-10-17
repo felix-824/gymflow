@@ -223,7 +223,7 @@ describe('Reservation create against disposable replica-set GraphQL', () => {
 		if (viewer) operation.set('Authorization', 'Bearer ' + (await token(viewer)));
 		const result = await operation.send({
 			query: `mutation($input: ProgramUpdate!) { ${name}(input: $input) { _id programType programDuration programLocation programAddress programCapacity programPrice programStatus } }`,
-			variables: { input: { _id: pt._id.toHexString(), ...patch } },
+			variables: { input: { expectedRevision: (await programs.findById((patch as { _id?: string })._id ?? pt._id).lean().exec())!.programRevision, _id: pt._id.toHexString(), ...patch } },
 		});
 		return result.body as {
 			data?: { updateProgram?: Program; updateProgramByAdmin?: Program };
@@ -362,7 +362,7 @@ describe('Reservation create against disposable replica-set GraphQL', () => {
 			throw new Error('Forced constraint read failure');
 		});
 		await expect(
-			programService.updateProgram(trainer._id, {
+			programService.updateProgram(trainer._id, { expectedRevision: (await programs.findById(pt._id).lean().exec())?.programRevision ?? 0,
 				_id: pt._id,
 				programDuration: 30,
 			}),
@@ -388,7 +388,7 @@ describe('Reservation create against disposable replica-set GraphQL', () => {
 				return original(...args);
 			});
 		if (order === 'booking-first') {
-			const editing = programService.updateProgram(trainer._id, { _id: pt._id, programDuration: 30 }).then(
+			const editing = programService.updateProgram(trainer._id, { expectedRevision: (await programs.findById(pt._id).lean().exec())?.programRevision ?? 0, _id: pt._id, programDuration: 30 }).then(
 				(value) => ({ value }),
 				(error) => ({ error }),
 			);
@@ -399,14 +399,14 @@ describe('Reservation create against disposable replica-set GraphQL', () => {
 				resume.release();
 			}
 			const result = await editing;
-			expect('error' in result && (result.error as Error).message).toContain('Program changed');
+			expect('error' in result && (result.error as Error).message).toContain('Program is busy');
 			expect((await programs.findById(pt._id))?.programDuration).toBe(60);
 			expect((await reservations.findOne())?.endTime).toBe('10:00');
 		} else {
 			const booking = query();
 			await entered.promise;
 			try {
-				await programService.updateProgram(trainer._id, {
+				await programService.updateProgram(trainer._id, { expectedRevision: (await programs.findById(pt._id).lean().exec())?.programRevision ?? 0,
 					_id: pt._id,
 					programDuration: 30,
 				});
@@ -440,7 +440,7 @@ describe('Reservation create against disposable replica-set GraphQL', () => {
 				return original(...args);
 			});
 		if (order === 'booking-first') {
-			const editing = programService.updateProgram(trainer._id, { _id: group._id, programCapacity: 2 }).then(
+			const editing = programService.updateProgram(trainer._id, { expectedRevision: (await programs.findById(group._id).lean().exec())?.programRevision ?? 0, _id: group._id, programCapacity: 2 }).then(
 				(value) => ({ value }),
 				(error) => ({ error }),
 			);
@@ -451,14 +451,14 @@ describe('Reservation create against disposable replica-set GraphQL', () => {
 				resume.release();
 			}
 			const result = await editing;
-			expect('error' in result && (result.error as Error).message).toContain('Program changed');
+			expect('error' in result && (result.error as Error).message).toContain('Program is busy');
 			expect((await programs.findById(group._id))?.programCapacity).toBe(3);
 			expect(await reservations.countDocuments()).toBe(3);
 		} else {
 			const booking = query(input(group));
 			await entered.promise;
 			try {
-				await programService.updateProgram(trainer._id, {
+				await programService.updateProgram(trainer._id, { expectedRevision: (await programs.findById(group._id).lean().exec())?.programRevision ?? 0,
 					_id: group._id,
 					programCapacity: 2,
 				});

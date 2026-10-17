@@ -1,5 +1,5 @@
-import { Field, InputType, PartialType } from '@nestjs/graphql';
-import { IsEnum, IsMongoId, IsOptional } from 'class-validator';
+import { Field, InputType, Int, PartialType } from '@nestjs/graphql';
+import { IsEnum, IsInt, IsMongoId, IsOptional, Max, Min } from 'class-validator';
 import { ProgramInput } from './program.input';
 import { ProgramStatus } from '../../enums/program.enum';
 import { Types } from 'mongoose';
@@ -10,6 +10,12 @@ export class ProgramUpdate extends PartialType(ProgramInput) {
 	@IsMongoId()
 	@Field(() => String)
 	_id: ObjectId;
+
+	@IsInt()
+	@Min(0)
+	@Max(2147483646)
+	@Field(() => Int)
+	expectedRevision: number;
 
 	@IsOptional()
 	@IsEnum(ProgramStatus)

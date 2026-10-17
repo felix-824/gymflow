@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { fixtureAccessToken } from './auth-session.fixture';
 import 'reflect-metadata';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
@@ -40,6 +41,7 @@ describe('Program business revision integrity', () => {
 	let service: ProgramService, booking: ReservationService, reviewing: ReviewService;
 	let trainer: Member, other: Member, user: Member, admin: Member, program: Program;
 	const base: ProgramInput = {
+		createRequestId: randomUUID(),
 		programType: ProgramType.PT_1ON1,
 		programCategory: ProgramCategory.MUSCLE_GAIN,
 		programLocation: ProgramLocation.SEOUL,
@@ -115,7 +117,7 @@ describe('Program business revision integrity', () => {
 	}
 	const edit = (patch: Partial<ProgramUpdate> = {}, expectedRevision = 0) =>
 		service.updateProgram(trainer._id, { _id: program._id, expectedRevision, ...patch });
-	it('exposes required revision contracts without changing Create inputs', () => {
+	it('keeps business revision on Update and request identity on Create', () => {
 		const schema = app.get(GraphQLSchemaHost).schema;
 		expect((schema.getType('Program') as GraphQLObjectType).getFields().programRevision.type.toString()).toBe('Int!');
 		expect(
@@ -124,9 +126,8 @@ describe('Program business revision integrity', () => {
 		expect((schema.getType('ProgramInput') as GraphQLInputObjectType).getFields()).not.toHaveProperty(
 			'expectedRevision',
 		);
-		expect((schema.getType('ProgramInput') as GraphQLInputObjectType).getFields()).not.toHaveProperty(
-			'createRequestId',
-		);
+		expect((schema.getType('ProgramInput') as GraphQLInputObjectType).getFields().createRequestId.type.toString()).toBe('String!');
+		expect((schema.getType('ProgramUpdate') as GraphQLInputObjectType).getFields()).not.toHaveProperty('createRequestId');
 		expect(program.programRevision).toBe(0);
 	});
 	it('backfills legacy records to zero idempotently without touching timestamps, __v or business data', async () => {
@@ -247,6 +248,7 @@ describe('Program business revision integrity', () => {
 	it('preserves GROUP_CLASS occupancy floor', async () => {
 		program = await service.createProgram(trainer._id, {
 			...base,
+			createRequestId: randomUUID(),
 			programType: ProgramType.GROUP_CLASS,
 			programCapacity: 3,
 		});

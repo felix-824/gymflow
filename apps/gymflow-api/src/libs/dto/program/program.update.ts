@@ -1,4 +1,4 @@
-import { Field, InputType, Int, PartialType } from '@nestjs/graphql';
+import { Field, InputType, Int, OmitType, PartialType } from '@nestjs/graphql';
 import { IsEnum, IsInt, IsMongoId, IsOptional, Max, Min } from 'class-validator';
 import { ProgramInput } from './program.input';
 import { ProgramStatus } from '../../enums/program.enum';
@@ -6,7 +6,7 @@ import { Types } from 'mongoose';
 type ObjectId = Types.ObjectId;
 
 @InputType()
-export class ProgramUpdate extends PartialType(ProgramInput) {
+export class ProgramUpdate extends PartialType(OmitType(ProgramInput, ['createRequestId'] as const)) {
 	@IsMongoId()
 	@Field(() => String)
 	_id: ObjectId;

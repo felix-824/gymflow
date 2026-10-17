@@ -4,7 +4,7 @@ import { ProgramInput } from './dto/program/program.input';
 import { ProgramCategory, ProgramLocation, ProgramType } from './enums/program.enum';
 
 // Validate the merged document, including when only one related field changes.
-export function assertProgram(input: ProgramInput): void {
+export function assertProgram(input: Omit<ProgramInput, 'createRequestId'>): void {
 	const fail = (message: string): never => {
 		throw new BadRequestException(message);
 	};

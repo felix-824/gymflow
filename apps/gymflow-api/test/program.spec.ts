@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import 'reflect-metadata';
 import { model, Types, PipelineStage } from 'mongoose';
 import { assertProgram } from '../src/libs/program.validation';
@@ -21,6 +22,7 @@ function primaryQuery<T>(value: T) {
 const id = new Types.ObjectId();
 const owner = new Types.ObjectId();
 const valid = (): ProgramInput => ({
+	createRequestId: randomUUID(),
 	programType: ProgramType.PT_1ON1,
 	programCategory: ProgramCategory.MUSCLE_GAIN,
 	programLocation: ProgramLocation.SEOUL,
@@ -123,7 +125,7 @@ describe('Program lifecycle and discovery', () => {
 					return primaryQuery<State | null>({ ...state });
 				},
 			),
-			create: jest.fn((input: Partial<State>) => Promise.resolve({ ...state, ...input })),
+			create: jest.fn((input: Partial<State>[]) => Promise.resolve(input.map((value) => ({ ...state, ...value })))),
 			aggregate: jest.fn((...args: [PipelineStage[]]) => {
 				void args;
 				return query([{ list: [], metaCounter: [] }]);
@@ -176,6 +178,8 @@ describe('Program lifecycle and discovery', () => {
 			dependency(like),
 			dependency(reservationModel),
 			dependency(reviewModel),
+			dependency({ findOne: () => primaryQuery(null), create: jest.fn(async () => []) }),
+			dependency({ findOneAndUpdate: () => primaryQuery({ _id: owner, memberPrograms: 1 }) }),
 		);
 	});
 	it.each([
@@ -228,10 +232,12 @@ describe('Program lifecycle and discovery', () => {
 			programLikes: 999,
 		} as ProgramInput);
 		expect(modelMock.create).toHaveBeenCalledWith(
-			expect.objectContaining({ memberId: owner, programStatus: ProgramStatus.ACTIVE }),
+			[expect.objectContaining({ memberId: owner, programStatus: ProgramStatus.ACTIVE })],
+			{ session: {} },
 		);
-		expect(modelMock.create.mock.calls[0][0]).not.toHaveProperty('programLikes');
-		expect(member.memberStatsEditor).toHaveBeenCalledWith({ _id: owner, targetKey: 'memberPrograms', modifier: 1 });
+		expect(modelMock.create.mock.calls[0][0][0]).not.toHaveProperty('programLikes');
+		expect(modelMock.create.mock.calls[0][0][0]).not.toHaveProperty('createRequestId');
+		expect(member.memberStatsEditor).not.toHaveBeenCalled();
 	});
 	it('rejects a non-trainer owner even when called directly', async () => {
 		member.getMember.mockResolvedValue({ memberType: MemberType.USER, memberStatus: MemberStatus.ACTIVE });

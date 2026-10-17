@@ -10,6 +10,7 @@ import {
 	IsMongoId,
 	IsOptional,
 	IsString,
+	IsUUID,
 	Length,
 	Min,
 	ValidateNested,
@@ -21,6 +22,10 @@ import { OrdinaryInquiry } from '../common/inquiry';
 
 @InputType()
 export class ProgramInput {
+	@IsUUID('4')
+	@Field(() => String)
+	createRequestId: string;
+
 	@IsEnum(ProgramType)
 	@Field(() => ProgramType)
 	programType: ProgramType;

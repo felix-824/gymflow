@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { fixtureAccessToken } from './auth-session.fixture';
 import 'reflect-metadata';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
@@ -40,6 +41,7 @@ import { NotificationGroup, NotificationType } from '../src/libs/enums/notificat
 import { GraphQLAuthContext } from '../src/libs/types/auth-context';
 
 const offering = (name = 'Strength session'): ProgramInput => ({
+	createRequestId: randomUUID(),
 	programType: ProgramType.PT_1ON1,
 	programCategory: ProgramCategory.MUSCLE_GAIN,
 	programLocation: ProgramLocation.SEOUL,

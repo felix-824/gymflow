@@ -4,6 +4,8 @@ import { ProgramService } from './program.service';
 import { MongooseModule } from '@nestjs/mongoose';
 import NotificationSchema from '../../schemas/Notification.model';
 import ProgramSchema from '../../schemas/Program.model';
+import ProgramCreateRequestSchema from '../../schemas/ProgramCreateRequest.model';
+import MemberSchema from '../../schemas/Member.model';
 import ReservationSchema from '../../schemas/Reservation.model';
 import ReviewSchema from '../../schemas/Review.model';
 import { AuthModule } from '../auth/auth.module';
@@ -18,6 +20,8 @@ import { LikeModule } from '../like/like.module';
 				name: 'Program',
 				schema: ProgramSchema,
 			},
+			{ name: 'ProgramCreateRequest', schema: ProgramCreateRequestSchema },
+			{ name: 'Member', schema: MemberSchema },
 			{ name: 'Notification', schema: NotificationSchema },
 			{ name: 'Reservation', schema: ReservationSchema },
 			{ name: 'Review', schema: ReviewSchema },

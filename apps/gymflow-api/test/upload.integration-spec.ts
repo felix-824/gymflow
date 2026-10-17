@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { fixtureAccessToken } from './auth-session.fixture';
 import 'reflect-metadata';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
@@ -5,7 +6,7 @@ import { Test } from '@nestjs/testing';
 import { MongooseModule, getConnectionToken } from '@nestjs/mongoose';
 import { GraphQLModule } from '@nestjs/graphql';
 import { ApolloDriver } from '@nestjs/apollo';
-import { MongoMemoryServer } from 'mongodb-memory-server';
+import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { Connection } from 'mongoose';
 import { Server } from 'node:http';
 import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises';
@@ -37,7 +38,7 @@ interface ImageResponse {
 
 describe('Authenticated multipart and Program image round trips (disposable database)', () => {
 	let app: INestApplication,
-		mongo: MongoMemoryServer,
+		mongo: MongoMemoryReplSet,
 		connection: Connection,
 		trainer: Member,
 		user: Member,
@@ -48,8 +49,8 @@ describe('Authenticated multipart and Program image round trips (disposable data
 	beforeAll(async () => {
 		directory = await mkdtemp(path.join(tmpdir(), 'gymflow-upload-integration-'));
 		process.chdir(directory);
-		mongo = await MongoMemoryServer.create({
-			instance: { ip: '127.0.0.1', dbName: 'image_upload_test' },
+		mongo = await MongoMemoryReplSet.create({
+			replSet: { count: 1, storageEngine: 'wiredTiger', ip: '127.0.0.1', dbName: 'image_upload_test' },
 			binary: { version: '8.2.6', downloadDir: binaries },
 		});
 		const module = await Test.createTestingModule({
@@ -119,6 +120,7 @@ describe('Authenticated multipart and Program image round trips (disposable data
 	const read =
 		'query($input:TrainerProgramsInquiry!){getTrainerPrograms(input:$input){list{_id programImages} metaCounter{total}}}';
 	const input = (programImages: string[]) => ({
+		createRequestId: randomUUID(),
 		programName: 'Image round trip',
 		programType: 'PT_1ON1',
 		programCategory: 'MUSCLE_GAIN',

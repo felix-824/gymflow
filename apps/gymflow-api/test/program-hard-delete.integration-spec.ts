@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { fixtureAccessToken } from './auth-session.fixture';
 import 'reflect-metadata';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
@@ -96,6 +97,7 @@ describe('Admin Program hard-delete integrity', () => {
 			})),
 		);
 		program = await service.createProgram(trainer._id, {
+			createRequestId: randomUUID(),
 			programType: ProgramType.PT_1ON1,
 			programCategory: ProgramCategory.MUSCLE_GAIN,
 			programLocation: ProgramLocation.SEOUL,

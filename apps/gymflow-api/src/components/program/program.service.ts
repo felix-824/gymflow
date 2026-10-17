@@ -1,5 +1,8 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import { createHash } from 'node:crypto';
+import { Member } from '../../libs/dto/member/member';
+import { ProgramCreateRequest } from '../../libs/types/program-create-request';
 import { ClientSession, Model, Types, mongo } from 'mongoose';
 type ObjectId = Types.ObjectId;
 import {
@@ -52,9 +55,13 @@ export class ProgramService implements OnModuleInit {
 		@InjectModel('Reservation')
 		private readonly reservationModel: Model<Reservation>,
 		@InjectModel('Review') private readonly reviewModel: Model<Review>,
+		@InjectModel('ProgramCreateRequest') private readonly createRequestModel: Model<ProgramCreateRequest>,
+		@InjectModel('Member') private readonly memberModel: Model<Member>,
 	) {}
 
 	async onModuleInit(): Promise<void> {
+		// Explicit readiness also covers deployments with automatic index creation disabled.
+		await this.createRequestModel.createIndexes();
 		// Finish legacy rollout before this API accepts writes; native update preserves timestamps and __v.
 		await this.programModel.collection.updateMany(
 			{ programRevision: { $exists: false } },
@@ -64,15 +71,80 @@ export class ProgramService implements OnModuleInit {
 
 	public async createProgram(memberId: ObjectId, input: ProgramInput): Promise<Program> {
 		const owner = await this.memberService.getMember(null, memberId);
-
 		if (owner.memberType !== MemberType.TRAINER || owner.memberStatus !== MemberStatus.ACTIVE)
 			throw new BadRequestException('An active trainer must own the program');
-
+		if (
+			typeof input.createRequestId !== 'string' ||
+			!/^[a-f\d]{8}-[a-f\d]{4}-4[a-f\d]{3}-[89ab][a-f\d]{3}-[a-f\d]{12}$/i.test(input.createRequestId)
+		)
+			throw new BadRequestException('A valid createRequestId is required');
 		const fields = this.pickFields(input);
-		assertProgram(fields as ProgramInput);
-		const result = await this.programModel.create({ ...fields, memberId, programStatus: ProgramStatus.ACTIVE });
-		await this.memberService.memberStatsEditor({ _id: memberId, targetKey: 'memberPrograms', modifier: 1 });
-		return result;
+		assertProgram(fields as Omit<ProgramInput, 'createRequestId'>);
+		const createRequestId = input.createRequestId.toLowerCase();
+		// Fixed business-field ordering; absent/undefined/null optionals share a missing value.
+		// Stored strings and ordered image paths are otherwise exact, matching existing semantics.
+		const payloadHash = createHash('sha256')
+			.update(JSON.stringify(editable.map((key) => [key, fields[key] ?? null])))
+			.digest('hex');
+		const selector = { memberId, createRequestId };
+		const existing = await this.createRequestModel.findOne(selector).read('primary').lean().exec();
+		if (existing) return this.recoverCreatedProgram(existing, payloadHash);
+		try {
+			return await this.programModel.db.transaction(
+				async (session) => {
+					const programId = new Types.ObjectId();
+					await this.createRequestModel.create([{ ...selector, payloadHash, programId }], { session });
+					const [program] = await this.programModel.create(
+						[{ ...fields, _id: programId, memberId, programStatus: ProgramStatus.ACTIVE }],
+						{ session },
+					);
+					const trainer = await this.memberModel
+						.findOneAndUpdate(
+							{ _id: memberId, memberType: MemberType.TRAINER, memberStatus: MemberStatus.ACTIVE },
+							{ $inc: { memberPrograms: 1 } },
+							{ session, new: true },
+						)
+						.exec();
+					if (!trainer) throw new BadRequestException('An active trainer must own the program');
+					return program;
+				},
+				{ readPreference: 'primary', readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } },
+			);
+		} catch (error: unknown) {
+			if (
+				error instanceof mongo.MongoServerError &&
+				(error.code === 11000 || error.hasErrorLabel('UnknownTransactionCommitResult'))
+			) {
+				// Read the winner after the transaction has ended, never in its aborted session.
+				const receipt = await this.createRequestModel.findOne(selector).read('primary').lean().exec();
+				if (receipt) return this.recoverCreatedProgram(receipt, payloadHash);
+				throw new ConflictException('Create outcome unconfirmed. Retry the same request.');
+			}
+			throw error;
+		}
+	}
+
+	private async recoverCreatedProgram(receipt: ProgramCreateRequest, payloadHash: string): Promise<Program> {
+		if (receipt.payloadHash !== payloadHash)
+			throw new ConflictException({
+				message: 'This create request belongs to a different Program submission.',
+				reason: 'PROGRAM_CREATE_PAYLOAD_CONFLICT',
+			});
+		const program = await this.programModel
+			.findOne({
+				_id: receipt.programId,
+				memberId: receipt.memberId,
+				programStatus: { $ne: ProgramStatus.DELETE },
+			})
+			.read('primary')
+			.lean()
+			.exec();
+		if (!program)
+			throw new ConflictException({
+				message: 'This create request was already used. The original Program is unavailable.',
+				reason: 'PROGRAM_CREATE_UNAVAILABLE',
+			});
+		return program;
 	}
 
 	private pickFields(input: Partial<ProgramInput>): Partial<ProgramInput> {

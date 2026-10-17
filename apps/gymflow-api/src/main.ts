@@ -6,6 +6,9 @@ import {graphqlUploadExpress} from "graphql-upload";
 import * as express from 'express';
 import { ConfigService } from '@nestjs/config';
 import { authConfiguration } from './libs/auth.config';
+import { IMAGE_UPLOAD_MAX_BYTES, PROGRAM_MAX_IMAGES } from './libs/config';
+import { uploadedImageHeaders } from './libs/upload';
+import type { Server } from 'node:http';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -20,9 +23,10 @@ async function bootstrap() {
   app.enableCors({ origin: authConfiguration(app.get(ConfigService)).allowedOrigins, credentials: true });
 
  // GraphQL orqali fayl upload qilishni sozlaydi.
-  app.use(graphqlUploadExpress({ maxFileSize: 15000000, maxFiles: 10 }));
+  app.use(graphqlUploadExpress({ maxFileSize: IMAGE_UPLOAD_MAX_BYTES, maxFiles: PROGRAM_MAX_IMAGES }));
    // uploads papkasidagi rasmlar/fayllarni browser orqali ochishga imkon beradi.
-  app.use('/uploads', express.static('./uploads'));
+  app.use('/uploads', uploadedImageHeaders, express.static('./uploads'));
+  (app.getHttpServer() as Server).requestTimeout = 30000;
 // Backend serverni PORT_API yoki 3000 portda ishga tushiradi.
 
   await app.listen(process.env.PORT_API ?? 3000);

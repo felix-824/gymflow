@@ -1,6 +1,7 @@
 import { Schema } from 'mongoose';
 import { ProgramCategory, ProgramLocation, ProgramStatus, ProgramType } from '../libs/enums/program.enum';
 import { assertProgram } from '../libs/program.validation';
+import { PROGRAM_MAX_IMAGES } from '../libs/config';
 
 const integer = (min: number) => ({
 	type: Number,
@@ -20,7 +21,11 @@ const ProgramSchema = new Schema(
 		programPrice: integer(0),
 		programDuration: integer(1),
 		programCapacity: integer(1),
-		programImages: { type: [String], required: true, validate: (images: string[]) => images.length > 0 },
+		programImages: {
+			type: [String],
+			required: true,
+			validate: (images: string[]) => images.length > 0 && images.length <= PROGRAM_MAX_IMAGES,
+		},
 		programDesc: { type: String, minlength: 5, maxlength: 500 },
 		programViews: { type: Number, default: 0, min: 0 },
 		programLikes: { type: Number, default: 0, min: 0 },

@@ -194,7 +194,7 @@ describe('Reusable engagement', () => {
 				throw new Error('stream failed');
 			},
 		};
-		await expect(resolver.imageUploader(Promise.resolve(broken), 'program')).rejects.toThrow('stream failed');
-		await expect(resolver.imagesUploader([Promise.resolve(broken)], 'program')).rejects.toThrow('stream failed');
+		await expect(resolver.imageUploader(Promise.resolve(broken), 'program', MemberType.TRAINER)).rejects.toThrow('Image upload failed.');
+		await expect(resolver.imagesUploader([Promise.resolve(broken)], 'program', MemberType.TRAINER)).rejects.toThrow('Image upload failed.');
 	});
 });

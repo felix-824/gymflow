@@ -2,6 +2,7 @@ import { Field, InputType, Int } from '@nestjs/graphql';
 import { Type } from 'class-transformer';
 import {
 	ArrayNotEmpty,
+	ArrayMaxSize,
 	IsArray,
 	IsEnum,
 	IsIn,
@@ -15,7 +16,7 @@ import {
 } from 'class-validator';
 import { ProgramCategory, ProgramLocation, ProgramStatus, ProgramType } from '../../enums/program.enum';
 import { Direction } from '../../enums/common.enum';
-import { availableProgramSorts } from '../../config';
+import { availableProgramSorts, PROGRAM_MAX_IMAGES } from '../../config';
 import { OrdinaryInquiry } from '../common/inquiry';
 
 @InputType()
@@ -58,6 +59,7 @@ export class ProgramInput {
 
 	@IsArray()
 	@ArrayNotEmpty()
+	@ArrayMaxSize(PROGRAM_MAX_IMAGES)
 	@IsString({ each: true })
 	@Length(1, 2048, { each: true })
 	@Field(() => [String])

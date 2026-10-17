@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { PROGRAM_MAX_IMAGES } from './config';
 import { ProgramInput } from './dto/program/program.input';
 import { ProgramCategory, ProgramLocation, ProgramType } from './enums/program.enum';
 
@@ -19,6 +20,7 @@ export function assertProgram(input: ProgramInput): void {
 	if (
 		!Array.isArray(input.programImages) ||
 		!input.programImages.length ||
+		input.programImages.length > PROGRAM_MAX_IMAGES ||
 		input.programImages.some((image) => typeof image !== 'string' || !image.trim() || image.length > 2048)
 	)
 		fail('Program images are required');

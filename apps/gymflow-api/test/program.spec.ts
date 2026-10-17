@@ -43,6 +43,7 @@ describe('Program validation and persistence contract', () => {
 		['programCapacity', 2],
 		['programImages', []],
 		['programImages', ['']],
+		['programImages', Array(6).fill('uploads/program/photo.png')],
 		['programName', null],
 		['programPrice', null],
 		['programAddress', null],

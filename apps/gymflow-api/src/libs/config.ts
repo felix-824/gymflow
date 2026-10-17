@@ -23,13 +23,13 @@ export const availableCommentSorts = ['createdAt', 'updatedAt'];
 
 // IMAGE CONFIGURATION
 import { v4 as uuidv4 } from 'uuid';
-import * as path from 'path';
 
-export const validMimeTypes = ['image/png', 'image/jpg', 'image/jpeg'];
-export const getSerialForImage = (filename: string) => {
-	const ext = path.parse(filename).ext;
-	return uuidv4() + ext;
-};
+export const IMAGE_UPLOAD_MAX_BYTES = 5 * 1024 * 1024;
+export const IMAGE_UPLOAD_MAX_PIXELS = 16000000;
+export const PROGRAM_MAX_IMAGES = 5;
+export const validMimeTypes = ['image/png', 'image/jpg', 'image/jpeg', 'image/webp'];
+export const getSerialForImage = (format: 'jpeg' | 'png' | 'webp') =>
+	uuidv4() + (format === 'jpeg' ? '.jpg' : '.' + format);
 
 export const shapeIntoMongoObjectId = (target: unknown): Types.ObjectId => {
 	if (target instanceof Types.ObjectId) return target;

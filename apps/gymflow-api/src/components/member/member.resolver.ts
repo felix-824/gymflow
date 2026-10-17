@@ -11,14 +11,11 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { MemberType } from '../../libs/enums/member.enum';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { MemberSelfUpdate, MemberUpdate } from '../../libs/dto/member/member.update';
-import { getSerialForImage, shapeIntoMongoObjectId, validMimeTypes } from '../../libs/config';
+import { shapeIntoMongoObjectId } from '../../libs/config';
 import { WithoutGuard } from '../auth/guards/without.guard';
 import { GraphQLUpload } from 'graphql-upload';
 import type { FileUpload } from 'graphql-upload';
-import { uploadDirectory } from '../../libs/upload';
-import { createWriteStream } from 'fs';
-import { pipeline } from 'node:stream/promises';
-import { Message } from '../../libs/enums/common.enum';
+import { saveUploadedImages } from '../../libs/upload';
 import { AuthService } from '../auth/auth.service';
 import { AuthToken } from '../../libs/dto/member/auth-token';
 import type { GraphQLAuthContext } from '../../libs/types/auth-context';
@@ -168,46 +165,21 @@ export class MemberResolver {
 	@UseGuards(AuthGuard)
 	@Mutation(() => String)
 	public async imageUploader(
-		@Args({ name: 'file', type: () => GraphQLUpload })
-		file: Promise<FileUpload> | FileUpload,
+		@Args({ name: 'file', type: () => GraphQLUpload }) file: Promise<FileUpload> | FileUpload,
 		@Args('target') target: string,
+		@AuthMember('memberType') memberType: MemberType,
 	): Promise<string> {
-		console.log('Mutation: imageUploader');
-		const { createReadStream, filename, mimetype } = await file;
-
-		if (!filename) throw new Error(Message.UPLOAD_FAILED);
-		const validMime = validMimeTypes.includes(mimetype);
-		if (!validMime) throw new Error(Message.PROVIDE_ALLOWED_FORMAT);
-
-		const imageName = getSerialForImage(filename);
-		const directory = await uploadDirectory(target);
-		const url = `${directory.replace(/\\/g, '/')}/${imageName}`;
-		const stream = createReadStream();
-
-		await pipeline(stream, createWriteStream(url));
-
-		return url;
+		const images = await saveUploadedImages([file], target, memberType);
+		return images[0];
 	}
 
 	@UseGuards(AuthGuard)
 	@Mutation(() => [String])
 	public async imagesUploader(
-		@Args('files', { type: () => [GraphQLUpload] })
-		files: Promise<FileUpload>[],
+		@Args('files', { type: () => [GraphQLUpload] }) files: Promise<FileUpload>[],
 		@Args('target') target: string,
+		@AuthMember('memberType') memberType: MemberType,
 	): Promise<string[]> {
-		console.log('Mutation: imagesUploader');
-
-		const directory = await uploadDirectory(target);
-		return Promise.all(
-			files.map(async (file) => {
-				const { filename, mimetype, createReadStream } = await file;
-				if (!filename) throw new Error(Message.UPLOAD_FAILED);
-				if (!validMimeTypes.includes(mimetype)) throw new Error(Message.PROVIDE_ALLOWED_FORMAT);
-				const url = `${directory.replace(/\\/g, '/')}/${getSerialForImage(filename)}`;
-				await pipeline(createReadStream(), createWriteStream(url));
-				return url;
-			}),
-		);
+		return await saveUploadedImages(files, target, memberType);
 	}
 }

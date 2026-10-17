@@ -13,6 +13,7 @@ import { Server } from 'node:http';
 import { resolve } from 'node:path';
 import { readFile, unlink } from 'node:fs/promises';
 import { graphqlUploadExpress } from 'graphql-upload';
+import sharp from 'sharp';
 import { ComponentsModule } from '../src/components/components.module';
 import { ProgramService } from '../src/components/program/program.service';
 import { MemberService } from '../src/components/member/member.service';
@@ -436,12 +437,9 @@ describe('GymFlow migration against disposable MongoDB', () => {
 		expect((await members.findById(user._id).lean().exec())?.memberFollowings).toBe(0);
 	});
 
-	it('accepts an authenticated multipart program image and preserves its bytes', async () => {
+	it('accepts an authenticated multipart program image and returns a processed PNG', async () => {
 		if (!app) throw new Error('Test application not initialized');
-		const bytes = Buffer.from(
-			'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==',
-			'base64',
-		);
+		const bytes = await sharp({ create: { width: 2, height: 2, channels: 3, background: 'red' } }).png().toBuffer();
 		const response = await request(app.getHttpServer() as Server)
 			.post('/graphql')
 			.set('Authorization', 'Bearer ' + (await auth.createToken(trainer)))
@@ -461,7 +459,7 @@ describe('GymFlow migration against disposable MongoDB', () => {
 		const file = body.data?.imageUploader;
 		if (!file || !/^uploads\/program\/[a-f0-9-]+\.png$/.test(file)) throw new Error('Unexpected test upload path');
 		try {
-			expect(await readFile(file)).toEqual(bytes);
+			expect((await sharp(await readFile(file)).metadata()).format).toBe('png');
 		} finally {
 			await unlink(file);
 		} // Only the UUID file created by this test is removed.

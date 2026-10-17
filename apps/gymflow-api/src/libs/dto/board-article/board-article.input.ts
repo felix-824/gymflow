@@ -1,5 +1,6 @@
 import { Field, InputType, Int } from '@nestjs/graphql';
-import { IsIn, IsNotEmpty, IsOptional, IsString, Length, Min } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsIn, IsNotEmpty, IsOptional, IsString, Length, Max, MaxLength, Min, ValidateNested } from 'class-validator';
 import { Types } from 'mongoose';
 type ObjectId = Types.ObjectId;
 import { BoardArticleCategory, BoardArticleStatus } from '../../enums/board-article.enum';
@@ -39,6 +40,8 @@ class BAISearch {
 	articleCategory?: BoardArticleCategory;
 
 	@IsOptional()
+	@IsString()
+	@MaxLength(100)
 	@Field(() => String, { nullable: true })
 	text?: string;
 
@@ -56,6 +59,7 @@ export class BoardArticlesInquiry {
 
 	@IsNotEmpty()
 	@Min(1)
+	@Max(100)
 	@Field(() => Int)
 	limit: number;
 
@@ -69,6 +73,8 @@ export class BoardArticlesInquiry {
 	direction?: Direction;
 
 	@IsNotEmpty()
+	@ValidateNested()
+	@Type(() => BAISearch)
 	@Field(() => BAISearch)
 	search: BAISearch;
 }

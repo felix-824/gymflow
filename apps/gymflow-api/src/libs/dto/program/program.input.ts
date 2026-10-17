@@ -12,6 +12,7 @@ import {
 	IsString,
 	IsUUID,
 	Length,
+	Max,
 	Min,
 	ValidateNested,
 } from 'class-validator';
@@ -140,6 +141,10 @@ export class ProgramSearch {
 
 @InputType()
 export class ProgramListInquiry extends OrdinaryInquiry {
+	@Max(100)
+	@Field(() => Int)
+	declare limit: number;
+
 	@IsOptional()
 	@IsIn(availableProgramSorts)
 	@Field(() => String, { nullable: true })

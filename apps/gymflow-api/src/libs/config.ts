@@ -3,6 +3,8 @@ import { BadRequestException } from '@nestjs/common';
 import { LikeGroup } from './enums/like.enum';
 import type { OwnerMember, PublicMember } from './dto/member/member';
 
+export const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 export const availableTrainerSorts = ['createdAt', 'updatedAt', 'memberLikes', 'memberViews', 'memberRank'];
 export const availableMemberSorts = ['createdAt', 'updatedAt', 'memberLikes', 'memberViews'];
 

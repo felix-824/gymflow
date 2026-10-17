@@ -23,7 +23,13 @@ import { ViewGroup } from '../../libs/enums/view.enum';
 import { StatisticModifier, T } from '../../libs/types/common';
 import { BoardArticleUpdate } from '../../libs/dto/board-article/board-article.update';
 import { OrdinaryInquiry } from '../../libs/dto/common/inquiry';
-import { lookupAuthMemberLiked, lookupMember, publicMemberData, shapeIntoMongoObjectId } from '../../libs/config';
+import {
+	escapeRegex,
+	lookupAuthMemberLiked,
+	lookupMember,
+	publicMemberData,
+	shapeIntoMongoObjectId,
+} from '../../libs/config';
 import { LikeService } from '../like/like.service';
 import { LikeGroup } from '../../libs/enums/like.enum';
 import { LikeInput } from '../../libs/dto/like/like.input';
@@ -214,7 +220,8 @@ export class BoardArticleService {
 	// ACTIVE board article'larni filter, search, sort va pagination bilan
 	//  olib keladi.
 	public async getBoardArticles(memberId: ObjectId, input: BoardArticlesInquiry): Promise<BoardArticles> {
-		const { articleCategory, text } = input.search;
+		const { articleCategory } = input.search;
+		const text = input.search.text?.trim();
 		const match: T = { articleStatus: BoardArticleStatus.ACTIVE };
 
 		const sort: T = { [input?.sort ?? 'createdAt']: input?.direction ?? Direction.DESC };
@@ -225,7 +232,8 @@ export class BoardArticleService {
 
 		if (text) {
 			match.articleTitle = {
-				$regex: new RegExp(text, 'i'),
+				$regex: escapeRegex(text),
+				$options: 'i',
 			};
 		}
 

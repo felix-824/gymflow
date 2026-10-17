@@ -26,7 +26,7 @@ import { capacityOccupyingStatuses, getSeoulDateTime } from '../../libs/availabi
 import { LikeGroup } from '../../libs/enums/like.enum';
 import { ViewGroup } from '../../libs/enums/view.enum';
 import { MemberStatus, MemberType } from '../../libs/enums/member.enum';
-import { availableProgramSorts, lookupAuthMemberLiked, shapeIntoMongoObjectId } from '../../libs/config';
+import { availableProgramSorts, escapeRegex, lookupAuthMemberLiked, shapeIntoMongoObjectId } from '../../libs/config';
 import { assertProgram } from '../../libs/program.validation';
 import { programOwnerStages } from '../../libs/program.aggregation';
 import { T } from '../../libs/types/common';
@@ -342,7 +342,7 @@ export class ProgramService implements OnModuleInit {
 				match[field] = { $gte: range.start, $lte: range.end };
 			}
 		}
-		if (search.text) match.programName = { $regex: search.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
+		if (search.text) match.programName = { $regex: escapeRegex(search.text), $options: 'i' };
 		return match;
 	}
 

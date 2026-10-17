@@ -18,6 +18,7 @@ import { Follower, Following, MeFollowed } from '../../libs/dto/follow/follow';
 import {
 	adminMemberProjection,
 	lookupAuthMemberFollowed,
+	escapeRegex,
 	lookupAuthMemberLiked,
 	ownerMemberData,
 	ownerMemberProjection,
@@ -149,11 +150,11 @@ export class MemberService {
 	}
 
 	public async getTrainers(memberId: ObjectId, input: TrainersInquiry): Promise<PublicMembers> {
-		const { text } = input.search;
+		const text = input.search.text?.trim();
 		const match: T = { memberType: MemberType.TRAINER, memberStatus: MemberStatus.ACTIVE };
 		const sort: T = { [input?.sort ?? 'createdAt']: input?.direction ?? Direction.DESC };
 
-		if (text) match.memberNick = { $regex: new RegExp(text, 'i') };
+		if (text) match.memberNick = { $regex: escapeRegex(text), $options: 'i' };
 		console.log('match:', match);
 
 		const result = await this.memberModel
@@ -200,14 +201,15 @@ export class MemberService {
 	}
 
 	public async getAllMembersByAdmin(input: MembersInquiry): Promise<Members> {
-		const { memberStatus, memberType, text } = input.search;
+		const { memberStatus, memberType } = input.search;
+		const text = input.search.text?.trim();
 		const match: T = {};
 		const sort: T = { [input?.sort ?? 'createdAt']: input?.direction ?? Direction.DESC };
 
 		if (memberStatus) match.memberStatus = memberStatus;
 		if (memberType) match.memberType = memberType;
 
-		if (text) match.memberNick = { $regax: new RegExp(text, 'i') };
+		if (text) match.memberNick = { $regex: escapeRegex(text), $options: 'i' };
 		console.log('match:', match);
 
 		const result = await this.memberModel

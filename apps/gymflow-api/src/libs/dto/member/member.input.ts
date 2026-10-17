@@ -1,5 +1,6 @@
 import { Field, InputType, Int } from '@nestjs/graphql';
-import { IsIn, IsNotEmpty, IsOptional, Length, Min } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsIn, IsNotEmpty, IsOptional, IsString, Length, Max, MaxLength, Min, ValidateNested } from 'class-validator';
 import { MemberAuthType, MemberStatus, MemberType } from '../../enums/member.enum';
 import { availableTrainerSorts, availableMemberSorts } from '../../config';
 import { Direction } from '../../enums/common.enum';
@@ -45,7 +46,9 @@ export class LoginInput {
 
 @InputType()
 class TrainerSearch {
-	@IsNotEmpty()
+	@IsOptional()
+	@IsString()
+	@MaxLength(100)
 	@Field(() => String, { nullable: true })
 	text?: string;
 }
@@ -59,6 +62,7 @@ export class TrainersInquiry {
 
 	@IsNotEmpty()
 	@Min(1)
+	@Max(100)
 	@Field(() => Int)
 	limit: number;
 
@@ -72,6 +76,8 @@ export class TrainersInquiry {
 	direction?: Direction;
 
 	@IsNotEmpty()
+	@ValidateNested()
+	@Type(() => TrainerSearch)
 	@Field(() => TrainerSearch)
 	search: TrainerSearch;
 }
@@ -88,6 +94,8 @@ class MISearch {
 	memberType?: MemberType;
 
 	@IsOptional()
+	@IsString()
+	@MaxLength(100)
 	@Field(() => String, { nullable: true })
 	text?: string;
 }
@@ -101,6 +109,7 @@ export class MembersInquiry {
 
 	@IsNotEmpty()
 	@Min(1)
+	@Max(100)
 	@Field(() => Int)
 	limit: number;
 
@@ -114,6 +123,8 @@ export class MembersInquiry {
 	direction?: Direction;
 
 	@IsNotEmpty()
+	@ValidateNested()
+	@Type(() => MISearch)
 	@Field(() => MISearch)
 	search: MISearch;
 }

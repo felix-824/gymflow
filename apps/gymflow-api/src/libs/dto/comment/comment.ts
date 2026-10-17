@@ -2,7 +2,7 @@ import { Field, ObjectType } from '@nestjs/graphql';
 import { Types } from 'mongoose';
 type ObjectId = Types.ObjectId;
 import { CommentStatus } from '../../enums/comment.enum';
-import { Member, TotalCounter } from '../member/member';
+import { PublicMember, TotalCounter } from '../member/member';
 
 @ObjectType()
 export class Comment {
@@ -29,8 +29,8 @@ export class Comment {
 
 	/** from aggregation **/
 
-	@Field(() => Member, { nullable: true })
-	memberData?: Member;
+	@Field(() => PublicMember, { nullable: true })
+	memberData?: PublicMember;
 }
 
 @ObjectType()

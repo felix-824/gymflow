@@ -6,6 +6,84 @@ import { MeLiked } from '../like/like';
 import { MeFollowed } from '../follow/follow';
 
 @ObjectType()
+export class PublicMember {
+	@Field(() => String)
+	_id: ObjectId;
+
+	@Field(() => MemberType)
+	memberType: MemberType;
+
+	@Field(() => String)
+	memberNick: string;
+
+	@Field(() => String, { nullable: true })
+	memberFullName?: string;
+
+	@Field(() => String)
+	memberImage: string;
+
+	@Field(() => String, { nullable: true })
+	memberDesc?: string;
+
+	@Field(() => Int)
+	memberPrograms: number;
+
+	@Field(() => Int)
+	memberArticles: number;
+
+	@Field(() => Int)
+	memberFollowers: number;
+
+	@Field(() => Int)
+	memberFollowings: number;
+
+	@Field(() => Int)
+	memberLikes: number;
+
+	@Field(() => Int)
+	memberViews: number;
+
+	@Field(() => Int)
+	memberComments: number;
+
+	@Field(() => Int)
+	memberRank: number;
+
+	@Field(() => [MeLiked], { nullable: true })
+	meLiked?: MeLiked[];
+
+	@Field(() => [MeFollowed], { nullable: true })
+	meFollowed?: MeFollowed[];
+}
+
+@ObjectType()
+export class OwnerMember extends PublicMember {
+	@Field(() => MemberStatus)
+	memberStatus: MemberStatus;
+
+	@Field(() => MemberAuthType)
+	memberAuthType: MemberAuthType;
+
+	@Field(() => String)
+	memberPhone: string;
+
+	@Field(() => String, { nullable: true })
+	memberAddress?: string;
+
+	@Field(() => Int)
+	memberPoints: number;
+
+	@Field(() => Date)
+	createdAt: Date;
+
+	@Field(() => Date)
+	updatedAt: Date;
+
+	@Field(() => String, { nullable: true })
+	accessToken?: string;
+}
+
+@ObjectType()
 export class Member {
 	@Field(() => String)
 	_id: ObjectId;
@@ -81,7 +159,7 @@ export class Member {
 	@Field(() => Date)
 	updatedAt: Date;
 
-	@Field(() => String, { nullable: true })
+	// Internal authentication receipt; never exposed by the Admin Member contract.
 	accessToken?: string;
 
 	/** from aggregation **/
@@ -103,6 +181,15 @@ export class TotalCounter {
 export class Members {
 	@Field(() => [Member])
 	list: Member[];
+
+	@Field(() => [TotalCounter], { nullable: true })
+	metaCounter: TotalCounter[];
+}
+
+@ObjectType()
+export class PublicMembers {
+	@Field(() => [PublicMember])
+	list: PublicMember[];
 
 	@Field(() => [TotalCounter], { nullable: true })
 	metaCounter: TotalCounter[];

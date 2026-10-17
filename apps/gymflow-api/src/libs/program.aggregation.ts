@@ -1,6 +1,7 @@
 import type { PipelineStage } from 'mongoose';
 import { MemberStatus, MemberType } from './enums/member.enum';
 import { ProgramStatus } from './enums/program.enum';
+import { publicMemberProjection } from './config';
 
 // Run before pagination/counting so missing or unavailable owners never inflate totals.
 export function programOwnerStages(publicOnly: boolean): PipelineStage[] {
@@ -11,7 +12,7 @@ export function programOwnerStages(publicOnly: boolean): PipelineStage[] {
 				localField: 'memberId',
 				foreignField: '_id',
 				as: 'memberData',
-				pipeline: [{ $project: { memberPassword: 0 } }],
+				pipeline: [{ $project: { ...publicMemberProjection, memberStatus: 1 } }],
 			},
 		},
 		{ $unwind: { path: '$memberData', preserveNullAndEmptyArrays: !publicOnly } },
@@ -26,6 +27,8 @@ export function programOwnerStages(publicOnly: boolean): PipelineStage[] {
 					},
 				]
 			: []),
+		// Status is needed above for visibility, but is never part of the public identity output.
+		{ $unset: 'memberData.memberStatus' },
 	];
 }
 

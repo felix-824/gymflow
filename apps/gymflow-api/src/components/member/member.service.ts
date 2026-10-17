@@ -1,8 +1,8 @@
-import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException, UnauthorizedException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 type ObjectId = Types.ObjectId;
-import { Member, Members } from '../../libs/dto/member/member';
+import { Member, Members, OwnerMember, PublicMember, PublicMembers } from '../../libs/dto/member/member';
 import { TrainersInquiry, LoginInput, MemberInput, MembersInquiry } from '../../libs/dto/member/member.input';
 import { MemberStatus, MemberType } from '../../libs/enums/member.enum';
 import { Direction, Message } from '../../libs/enums/common.enum';
@@ -15,7 +15,15 @@ import { LikeInput } from '../../libs/dto/like/like.input';
 import { LikeGroup } from '../../libs/enums/like.enum';
 import { LikeService } from '../like/like.service';
 import { Follower, Following, MeFollowed } from '../../libs/dto/follow/follow';
-import { lookupAuthMemberFollowed, lookupAuthMemberLiked } from '../../libs/config';
+import {
+	adminMemberProjection,
+	lookupAuthMemberFollowed,
+	lookupAuthMemberLiked,
+	ownerMemberData,
+	ownerMemberProjection,
+	publicMemberData,
+	publicMemberProjection,
+} from '../../libs/config';
 
 @Injectable()
 export class MemberService {
@@ -27,7 +35,7 @@ export class MemberService {
 		private likeService: LikeService,
 	) {}
 
-	public async signup(input: MemberInput): Promise<Member> {
+	public async signup(input: MemberInput): Promise<OwnerMember> {
 		if (input.memberType != null && ![MemberType.USER, MemberType.TRAINER].includes(input.memberType))
 			throw new BadRequestException('Invalid signup role');
 		input.memberType ??= MemberType.USER;
@@ -35,14 +43,14 @@ export class MemberService {
 		try {
 			const result = await this.memberModel.create(input);
 			result.accessToken = await this.authService.createToken(result);
-			return result;
+			return ownerMemberData(result);
 		} catch (err) {
 			if (err instanceof Error) console.log('Error, Service.model:', err.message);
 			throw new BadRequestException(Message.USED_MEMBER_NICK_OR_PHONE);
 		}
 	}
 
-	public async login(input: LoginInput): Promise<Member> {
+	public async login(input: LoginInput): Promise<OwnerMember> {
 		const { memberNick } = input;
 
 		const response = await this.memberModel.findOne({ memberNick: memberNick }).select('+memberPassword').exec();
@@ -59,10 +67,10 @@ export class MemberService {
 		if (!isMatch) throw new InternalServerErrorException(Message.WRONG_PASSWORD);
 
 		response.accessToken = await this.authService.createToken(response);
-		return response;
+		return ownerMemberData(response);
 	}
 
-	public async updateMember(memberId: ObjectId, input: MemberSelfUpdate): Promise<Member> {
+	public async updateMember(memberId: ObjectId, input: MemberSelfUpdate): Promise<OwnerMember> {
 		const allowed = [
 			'memberPhone',
 			'memberNick',
@@ -87,7 +95,23 @@ export class MemberService {
 		if (!result) throw new InternalServerErrorException(Message.UPDATE_FAILED);
 
 		result.accessToken = await this.authService.createToken(result);
-		return result;
+		return ownerMemberData(result);
+	}
+
+	public async getMyMember(memberId: ObjectId): Promise<OwnerMember> {
+		const member = await this.memberModel
+			.findOne({ _id: memberId, memberStatus: MemberStatus.ACTIVE })
+			.select(ownerMemberProjection)
+			.lean()
+			.exec();
+		if (!member) throw new UnauthorizedException('Please sign in with an active account');
+		return ownerMemberData(member);
+	}
+
+	public async getPublicMember(memberId: ObjectId | null, targetId: ObjectId): Promise<PublicMember> {
+		const member = await this.getMember(memberId, targetId);
+		if (member.memberStatus !== MemberStatus.ACTIVE) throw new InternalServerErrorException(Message.NO_DATA_FOUND);
+		return publicMemberData(member);
 	}
 
 	public async getMember(memberId: ObjectId | null, targetId: ObjectId): Promise<Member> {
@@ -127,7 +151,7 @@ export class MemberService {
 		return result ? [{ followerId: followerId, followingId: followingId, myFollowing: true }] : [];
 	}
 
-	public async getTrainers(memberId: ObjectId, input: TrainersInquiry): Promise<Members> {
+	public async getTrainers(memberId: ObjectId, input: TrainersInquiry): Promise<PublicMembers> {
 		const { text } = input.search;
 		const match: T = { memberType: MemberType.TRAINER, memberStatus: MemberStatus.ACTIVE };
 		const sort: T = { [input?.sort ?? 'createdAt']: input?.direction ?? Direction.DESC };
@@ -136,7 +160,7 @@ export class MemberService {
 		console.log('match:', match);
 
 		const result = await this.memberModel
-			.aggregate<Members>([
+			.aggregate<PublicMembers>([
 				{ $match: match },
 				{ $sort: sort },
 				{
@@ -144,6 +168,7 @@ export class MemberService {
 						list: [
 							{ $skip: (input.page - 1) * input.limit },
 							{ $limit: input.limit },
+							{ $project: publicMemberProjection },
 							lookupAuthMemberLiked(memberId),
 							lookupAuthMemberFollowed({ followerId: memberId, followingId: '$_id' }),
 						],
@@ -159,7 +184,7 @@ export class MemberService {
 
 	// Login memberning target memberga
 	// LIKE/UNLIKE bosishini boshqaradi
-	public async likeTargetMember(memberId: ObjectId, likeRefId: ObjectId): Promise<Member> {
+	public async likeTargetMember(memberId: ObjectId, likeRefId: ObjectId): Promise<PublicMember> {
 		const target = await this.memberModel.findOne({ _id: likeRefId, memberStatus: MemberStatus.ACTIVE }).exec();
 		if (!target) throw new InternalServerErrorException(Message.NO_DATA_FOUND);
 
@@ -174,7 +199,7 @@ export class MemberService {
 		const result = await this.memberStatsEditor({ _id: likeRefId, targetKey: 'memberLikes', modifier: modifier });
 
 		if (!result) throw new InternalServerErrorException(Message.SOMETHING_WENT_WRONG);
-		return result;
+		return publicMemberData(result);
 	}
 
 	public async getAllMembersByAdmin(input: MembersInquiry): Promise<Members> {
@@ -194,7 +219,11 @@ export class MemberService {
 				{ $sort: sort },
 				{
 					$facet: {
-						list: [{ $skip: (input.page - 1) * input.limit }, { $limit: input.limit }],
+						list: [
+							{ $skip: (input.page - 1) * input.limit },
+							{ $limit: input.limit },
+							{ $project: adminMemberProjection },
+						],
 						metaCounter: [{ $count: 'total' }],
 					},
 				},
@@ -214,6 +243,7 @@ export class MemberService {
 		if (input.memberPassword) input.memberPassword = await this.authService.hashPassword(input.memberPassword);
 		const result = await this.memberModel
 			.findOneAndUpdate({ _id: input._id }, input, { new: true, runValidators: true })
+			.select(adminMemberProjection)
 			.exec();
 		if (!result) throw new InternalServerErrorException(Message.UPDATE_FAILED);
 

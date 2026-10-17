@@ -2,7 +2,7 @@ import { Field, Int, ObjectType } from '@nestjs/graphql';
 import { Types } from 'mongoose';
 type ObjectId = Types.ObjectId;
 import { ProgramCategory, ProgramLocation, ProgramStatus, ProgramType } from '../../enums/program.enum';
-import { Member, TotalCounter } from '../member/member';
+import { PublicMember, TotalCounter } from '../member/member';
 import { MeLiked } from '../like/like';
 
 @ObjectType()
@@ -27,7 +27,7 @@ export class Program {
 	@Field(() => Date) createdAt: Date;
 	@Field(() => Date) updatedAt: Date;
 	@Field(() => [MeLiked], { nullable: true }) meLiked?: MeLiked[];
-	@Field(() => Member, { nullable: true }) memberData?: Member;
+	@Field(() => PublicMember, { nullable: true }) memberData?: PublicMember;
 }
 
 @ObjectType()

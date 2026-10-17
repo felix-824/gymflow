@@ -1,6 +1,7 @@
 import { Types } from 'mongoose';
 import { BadRequestException } from '@nestjs/common';
 import { LikeGroup } from './enums/like.enum';
+import type { OwnerMember, PublicMember } from './dto/member/member';
 
 export const availableTrainerSorts = ['createdAt', 'updatedAt', 'memberLikes', 'memberViews', 'memberRank'];
 export const availableMemberSorts = ['createdAt', 'updatedAt', 'memberLikes', 'memberViews'];
@@ -118,12 +119,82 @@ export const lookupAuthMemberFollowed = (input: LookupAuthMemberFollowed) => {
 	};
 };
 
+export const publicMemberProjection = {
+	_id: 1,
+	memberType: 1,
+	memberNick: 1,
+	memberFullName: 1,
+	memberImage: 1,
+	memberDesc: 1,
+	memberPrograms: 1,
+	memberArticles: 1,
+	memberFollowers: 1,
+	memberFollowings: 1,
+	memberLikes: 1,
+	memberViews: 1,
+	memberComments: 1,
+	memberRank: 1,
+	meLiked: 1,
+	meFollowed: 1,
+} as const;
+
+export const ownerMemberProjection = {
+	...publicMemberProjection,
+	memberStatus: 1,
+	memberAuthType: 1,
+	memberPhone: 1,
+	memberAddress: 1,
+	memberPoints: 1,
+	createdAt: 1,
+	updatedAt: 1,
+} as const;
+
+export const adminMemberProjection = {
+	...ownerMemberProjection,
+	memberWarnings: 1,
+	memberBlocks: 1,
+	deletedAt: 1,
+} as const;
+
+// Explicit response allowlists also strip fields from Mongoose authentication results.
+export const publicMemberData = (member: PublicMember): PublicMember => ({
+	_id: member._id,
+	memberType: member.memberType,
+	memberNick: member.memberNick,
+	memberFullName: member.memberFullName,
+	memberImage: member.memberImage,
+	memberDesc: member.memberDesc,
+	memberPrograms: member.memberPrograms,
+	memberArticles: member.memberArticles,
+	memberFollowers: member.memberFollowers,
+	memberFollowings: member.memberFollowings,
+	memberLikes: member.memberLikes,
+	memberViews: member.memberViews,
+	memberComments: member.memberComments,
+	memberRank: member.memberRank,
+	meLiked: member.meLiked,
+	meFollowed: member.meFollowed,
+});
+
+export const ownerMemberData = (member: OwnerMember): OwnerMember => ({
+	...publicMemberData(member),
+	memberStatus: member.memberStatus,
+	memberAuthType: member.memberAuthType,
+	memberPhone: member.memberPhone,
+	memberAddress: member.memberAddress,
+	memberPoints: member.memberPoints,
+	createdAt: member.createdAt,
+	updatedAt: member.updatedAt,
+	accessToken: member.accessToken,
+});
+
 export const lookupMember = {
 	$lookup: {
 		from: 'members',
 		localField: 'memberId',
 		foreignField: '_id',
 		as: 'memberData',
+		pipeline: [{ $project: publicMemberProjection }],
 	},
 };
 
@@ -135,6 +206,7 @@ export const lookupFollowingData = {
 		localField: 'followingId',
 		foreignField: '_id',
 		as: 'followingData',
+		pipeline: [{ $project: publicMemberProjection }],
 	},
 };
 
@@ -146,6 +218,7 @@ export const lookupFollowerData = {
 		localField: 'followerId',
 		foreignField: '_id',
 		as: 'followerData',
+		pipeline: [{ $project: publicMemberProjection }],
 	},
 };
 

@@ -23,7 +23,7 @@ import { ViewGroup } from '../../libs/enums/view.enum';
 import { StatisticModifier, T } from '../../libs/types/common';
 import { BoardArticleUpdate } from '../../libs/dto/board-article/board-article.update';
 import { OrdinaryInquiry } from '../../libs/dto/common/inquiry';
-import { lookupAuthMemberLiked, lookupMember, shapeIntoMongoObjectId } from '../../libs/config';
+import { lookupAuthMemberLiked, lookupMember, publicMemberData, shapeIntoMongoObjectId } from '../../libs/config';
 import { LikeService } from '../like/like.service';
 import { LikeGroup } from '../../libs/enums/like.enum';
 import { LikeInput } from '../../libs/dto/like/like.input';
@@ -134,7 +134,9 @@ export class BoardArticleService {
 			targetBoardArticle.meLiked = await this.likeService.checkLikeExistence(likeInput);
 		}
 
-		targetBoardArticle.memberData = await this.memberService.getMember(null, targetBoardArticle.memberId);
+		targetBoardArticle.memberData = publicMemberData(
+			await this.memberService.getMember(null, targetBoardArticle.memberId),
+		);
 
 		return targetBoardArticle;
 	}

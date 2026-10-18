@@ -18,12 +18,13 @@ import {
 	validMimeTypes,
 } from './config';
 import { MemberType } from './enums/member.enum';
+import { uploadRoot } from './upload-storage';
 
 let activeUploads = 0;
 
-export async function uploadDirectory(target: string): Promise<string> {
+export async function uploadDirectory(target: string, root = uploadRoot()): Promise<string> {
 	if (!['member', 'article', 'program'].includes(target)) throw new BadRequestException('Invalid upload target');
-	const directory = path.join('uploads', target);
+	const directory = path.join(root, target);
 	await mkdir(directory, { recursive: true });
 	return directory;
 }
@@ -47,9 +48,11 @@ export async function saveUploadedImages(
 	activeUploads++;
 	const published: string[] = [];
 	let temporary: string | undefined;
+	let temporaryRoot: string | undefined;
 	try {
-		const directory = await uploadDirectory(target);
-		const temporaryRoot = path.resolve('uploads', '.tmp');
+		const root = uploadRoot();
+		const directory = await uploadDirectory(target, root);
+		temporaryRoot = path.join(root, '.tmp');
 		await mkdir(temporaryRoot, { recursive: true });
 		temporary = await mkdtemp(path.join(temporaryRoot, 'batch-'));
 		const processed: { source: string; destination: string }[] = [];
@@ -97,7 +100,8 @@ export async function saveUploadedImages(
 			await link(image.source, image.destination);
 			published.push(image.destination);
 		}
-		return published;
+		// Public/stored paths stay unchanged even when the host filesystem root is configured elsewhere.
+		return published.map((file) => path.posix.join('uploads', target, path.basename(file)));
 	} catch (error) {
 		const cleanup = await Promise.allSettled(published.map((file) => unlink(file)));
 		if (cleanup.some((result) => result.status === 'rejected'))
@@ -106,7 +110,7 @@ export async function saveUploadedImages(
 		throw new BadRequestException('Image upload failed.');
 	} finally {
 		activeUploads--;
-		if (temporary && path.dirname(temporary) === path.resolve('uploads', '.tmp')) {
+		if (temporary && path.dirname(temporary) === temporaryRoot) {
 			// Only our generated batch directory, inside this upload root, can be removed.
 			await rm(temporary, { recursive: true, force: true });
 		}

@@ -10,7 +10,9 @@ import { JwtService } from '@nestjs/jwt';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { Connection } from 'mongoose';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { firstValueFrom, of } from 'rxjs';
 import request from 'supertest';
 
@@ -27,6 +29,7 @@ import {
 	authConfiguration,
 } from '../src/libs/auth.config';
 import { LoggingInterceptor } from '../src/libs/interceptor/Logging.interceptor';
+import { OperationsService } from '../src/operations.service';
 
 import { dependency } from './helpers';
 
@@ -57,8 +60,10 @@ describe('Production auth sessions against disposable MongoDB', () => {
 	let user: Member;
 	let trainer: Member;
 	let admin: Member;
+	let uploadStorage: string;
 	const password = randomBytes(9).toString('base64url');
 	beforeAll(async () => {
+		uploadStorage = await mkdtemp(join(tmpdir(), 'gymflow-auth-storage-'));
 		mongo = await MongoMemoryServer.create({
 			instance: { ip: '127.0.0.1', dbName: 'auth_sessions_disposable' },
 			binary: { version: '8.2.6', downloadDir: resolve('.tmp/mongodb-binaries') },
@@ -82,6 +87,7 @@ describe('Production auth sessions against disposable MongoDB', () => {
 			.compile();
 		app = module.createNestApplication({ logger: false });
 		app.useGlobalPipes(new ValidationPipe());
+		await app.get(OperationsService).prepareStorage(uploadStorage);
 		await app.init();
 		db = module.get<Connection>(getConnectionToken());
 		await Promise.all(Object.values(db.models).map((model) => model.init()));
@@ -91,6 +97,7 @@ describe('Production auth sessions against disposable MongoDB', () => {
 	afterAll(async () => {
 		await app?.close();
 		await mongo?.stop();
+		if (uploadStorage && dirname(uploadStorage) === tmpdir()) await rm(uploadStorage, { recursive: true, force: true });
 	});
 	beforeEach(async () => {
 		await Promise.all(Object.values(db.models).map((model) => model.deleteMany({}).exec()));
@@ -130,6 +137,10 @@ describe('Production auth sessions against disposable MongoDB', () => {
 			},
 		);
 	}
+	it('registers unauthenticated operational routes through the actual AppModule', async () => {
+		await request(app.getHttpServer()).get('/health').expect(200, { status: 'ok' });
+		await request(app.getHttpServer()).get('/ready').expect(200, { status: 'ready' });
+	});
 	it('registers JWT configuration asynchronously after values become available', () => {
 		const imports = Reflect.getMetadata('imports', AuthModule) as {
 			module?: { name: string };

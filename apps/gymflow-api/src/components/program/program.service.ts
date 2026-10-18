@@ -60,8 +60,8 @@ export class ProgramService implements OnModuleInit {
 	) {}
 
 	async onModuleInit(): Promise<void> {
-		// Explicit readiness also covers deployments with automatic index creation disabled.
-		await this.createRequestModel.createIndexes();
+		// Production connection readiness has already awaited this index before resolving any model provider.
+		if (process.env.NODE_ENV !== 'production') await this.createRequestModel.createIndexes();
 		// Finish legacy rollout before this API accepts writes; native update preserves timestamps and __v.
 		await this.programModel.collection.updateMany(
 			{ programRevision: { $exists: false } },

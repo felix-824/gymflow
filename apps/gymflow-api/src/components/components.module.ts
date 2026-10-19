@@ -11,6 +11,7 @@ import { TrainerScheduleModule } from './trainer-schedule/trainer-schedule.modul
 import { ReservationModule } from './reservation/reservation.module';
 import { AvailabilityModule } from './availability/availability.module';
 import { ReviewModule } from './review/review.module';
+import { TrainerApplicationModule } from './trainer-application/trainer-application.module';
 
 @Module({
 	imports: [
@@ -26,6 +27,7 @@ import { ReviewModule } from './review/review.module';
 		ReservationModule,
 		AvailabilityModule,
 		ReviewModule,
+		TrainerApplicationModule,
 	],
 })
 export class ComponentsModule {}

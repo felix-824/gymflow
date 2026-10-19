@@ -8,6 +8,8 @@ import ProgramCreateRequestSchema from '../schemas/ProgramCreateRequest.model';
 import ReviewSchema from '../schemas/Review.model';
 import TrainerScheduleSchema from '../schemas/TrainerSchedule.model';
 import ViewSchema from '../schemas/View.model';
+import TrainerApplicationSchema from '../schemas/TrainerApplication.model';
+import { isDeepStrictEqual } from 'node:util';
 
 const operationTimeoutMS = 30000;
 
@@ -50,6 +52,7 @@ export const criticalMongoIndexes = [
 	ViewSchema,
 	MemberSchema,
 	AuthSessionSchema,
+	TrainerApplicationSchema,
 ].flatMap((schema) =>
 	schema
 		.indexes()
@@ -61,6 +64,7 @@ export const criticalMongoIndexes = [
 				...(options.unique ? { unique: true } : {}),
 				...(options.sparse ? { sparse: true } : {}),
 				...(options.expireAfterSeconds !== undefined ? { expireAfterSeconds: options.expireAfterSeconds } : {}),
+				...(options.partialFilterExpression ? { partialFilterExpression: options.partialFilterExpression } : {}),
 			} satisfies mongo.CreateIndexesOptions,
 		})),
 );
@@ -73,7 +77,7 @@ function compatibleIndex(actual: mongo.IndexDescriptionInfo, required: CriticalI
 		Boolean(actual.unique) === Boolean(required.options.unique) &&
 		Boolean(actual.sparse) === Boolean(required.options.sparse) &&
 		actual.expireAfterSeconds === required.options.expireAfterSeconds &&
-		!actual.partialFilterExpression &&
+		isDeepStrictEqual(actual.partialFilterExpression, required.options.partialFilterExpression) &&
 		(!actual.collation || actual.collation.locale === 'simple')
 	);
 }

@@ -164,6 +164,64 @@ describe('production Mongo startup on a disposable replica set', () => {
 		expect(await requests.indexes()).toEqual(before);
 		expect(await requests.find().toArray()).toEqual([record]);
 	});
+	it('creates the application partial unique index and enforces combined PENDING/APPROVED uniqueness', async () => {
+		await compile();
+		const applications = raw.db!.collection('trainerApplications');
+		const memberId = new Types.ObjectId();
+		await applications.insertMany([
+			{ memberId, status: 'REJECTED' },
+			{ memberId, status: 'REJECTED' },
+		]);
+		const pending = await applications.insertOne({ memberId, status: 'PENDING' });
+		await expect(applications.insertOne({ memberId, status: 'PENDING' })).rejects.toMatchObject({ code: 11000 });
+		await expect(applications.insertOne({ memberId, status: 'APPROVED' })).rejects.toMatchObject({ code: 11000 });
+		await applications.deleteOne({ _id: pending.insertedId });
+		await applications.insertOne({ memberId, status: 'APPROVED' });
+		await expect(applications.insertOne({ memberId, status: 'PENDING' })).rejects.toMatchObject({ code: 11000 });
+		await expect(applications.insertOne({ memberId, status: 'APPROVED' })).rejects.toMatchObject({ code: 11000 });
+		expect(await applications.countDocuments({ memberId, status: 'REJECTED' })).toBe(2);
+	});
+	it.each([
+		{ unique: false, partialFilterExpression: { status: { $in: ['PENDING', 'APPROVED'] } } },
+		{ unique: true },
+		{ unique: true, partialFilterExpression: { status: 'PENDING' } },
+		{ unique: true, partialFilterExpression: { status: { $in: ['PENDING', 'APPROVED', 'REJECTED'] } } },
+		{ unique: true, sparse: true },
+		{
+			unique: true,
+			collation: { locale: 'en' },
+			partialFilterExpression: { status: { $in: ['PENDING', 'APPROVED'] } },
+		},
+	])('fails startup without repairing incompatible application index %j', async (options) => {
+		const applications = raw.db!.collection('trainerApplications');
+		await applications.createIndex({ memberId: 1 }, options);
+		const record = {
+			_id: new Types.ObjectId(),
+			memberId: new Types.ObjectId(),
+			status: 'PENDING',
+			bio: 'private fixture',
+		};
+		await applications.insertOne(record);
+		const before = await applications.indexes();
+		jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+		await expect(compile()).rejects.toThrow('incompatible critical index: trainerApplications');
+		expect(await applications.indexes()).toEqual(before);
+		expect(await applications.find().toArray()).toEqual([record]);
+	});
+	it('fails on duplicate eligible applications without deleting history or repairing indexes', async () => {
+		const applications = raw.db!.collection('trainerApplications');
+		const memberId = new Types.ObjectId();
+		const records = [
+			{ _id: new Types.ObjectId(), memberId, status: 'PENDING' },
+			{ _id: new Types.ObjectId(), memberId, status: 'APPROVED' },
+			{ _id: new Types.ObjectId(), memberId, status: 'REJECTED' },
+		];
+		await applications.insertMany(records);
+		jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+		await expect(compile()).rejects.toThrow('critical index initialization failed: trainerApplications');
+		expect(await applications.find().toArray()).toEqual(records);
+		expect((await applications.indexes()).map((index) => index.key)).toEqual([{ _id: 1 }]);
+	});
 });
 
 describe('standalone Mongo startup compatibility', () => {

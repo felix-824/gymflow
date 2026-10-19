@@ -116,7 +116,7 @@ describe('production Mongo configuration', () => {
 });
 
 describe('production Mongo readiness', () => {
-	it('derives exactly the current nine unique/TTL contracts, excluding performance indexes', () => {
+	it('derives all ten unique/TTL contracts, including trainer application eligibility', () => {
 		expect(criticalMongoIndexes.map(({ collection, key, options }) => ({ collection, key, options }))).toEqual([
 			{ collection: 'programCreateRequests', key: { memberId: 1, createRequestId: 1 }, options: { unique: true } },
 			{ collection: 'reviews', key: { reservationId: 1 }, options: { unique: true } },
@@ -127,6 +127,11 @@ describe('production Mongo readiness', () => {
 			{ collection: 'members', key: { memberPhone: 1 }, options: { unique: true, sparse: true } },
 			{ collection: 'members', key: { memberNick: 1 }, options: { unique: true, sparse: true } },
 			{ collection: 'authSessions', key: { expiresAt: 1 }, options: { expireAfterSeconds: 0 } },
+			{
+				collection: 'trainerApplications',
+				key: { memberId: 1 },
+				options: { unique: true, partialFilterExpression: { status: { $in: ['PENDING', 'APPROVED'] } } },
+			},
 		]);
 	});
 	it.each([
@@ -135,7 +140,7 @@ describe('production Mongo readiness', () => {
 	])('accepts transaction-capable topology and completes a zero-write probe', async (hello) => {
 		const test = fixture(hello);
 		await expect(readyProductionMongo(test.connection, 'gymflow_prod')).resolves.toBe(test.connection);
-		expect(test.createIndex).toHaveBeenCalledTimes(9);
+		expect(test.createIndex).toHaveBeenCalledTimes(10);
 		expect(test.findOne).toHaveBeenCalledWith(
 			{ _id: { $exists: false } },
 			expect.objectContaining({ session: test.session, projection: { _id: 1 } }),
@@ -176,7 +181,7 @@ describe('production Mongo readiness', () => {
 			return Promise.resolve('owned');
 		});
 		await ensureCriticalMongoIndexes(test.connection);
-		expect(test.createIndex).toHaveBeenCalledTimes(9);
+		expect(test.createIndex).toHaveBeenCalledTimes(10);
 	});
 	it('detects an index still missing after initialization instead of declaring readiness', async () => {
 		const test = fixture();
@@ -199,6 +204,23 @@ describe('production Mongo readiness', () => {
 		const test = fixture();
 		test.indexes.get('authSessions')![0].expireAfterSeconds = 60;
 		await expect(readyProductionMongo(test.connection, 'gymflow_prod')).rejects.toThrow('authSessions (expiresAt)');
+	});
+	it.each([
+		{ unique: false },
+		{ partialFilterExpression: undefined },
+		{ partialFilterExpression: { status: 'PENDING' } },
+		{ partialFilterExpression: { status: { $in: ['PENDING', 'APPROVED', 'REJECTED'] } } },
+		{ sparse: true },
+		{ expireAfterSeconds: 0 },
+		{ collation: { locale: 'en' } },
+	])('rejects incompatible trainer application index options without replacing the index: %j', async (options) => {
+		const test = fixture();
+		Object.assign(test.indexes.get('trainerApplications')![0], options);
+		await expect(ensureCriticalMongoIndexes(test.connection)).rejects.toThrow(
+			'incompatible critical index: trainerApplications',
+		);
+		expect(test.createIndex.mock.calls).toHaveLength(9);
+		expect(test.indexes.get('trainerApplications')).toHaveLength(1);
 	});
 	it('sanitizes duplicate-data errors and performs no destructive repair', async () => {
 		const test = fixture();

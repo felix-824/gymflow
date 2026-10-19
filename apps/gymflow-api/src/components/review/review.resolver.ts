@@ -14,7 +14,7 @@ import { ReviewService } from './review.service';
 export class ReviewResolver {
 	constructor(private readonly reviewService: ReviewService) {}
 
-	@Roles(MemberType.USER)
+	@Roles(MemberType.USER, MemberType.TRAINER)
 	@UseGuards(RolesGuard)
 	@Mutation(() => Review)
 	public async createReview(

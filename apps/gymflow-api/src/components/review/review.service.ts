@@ -46,7 +46,9 @@ export class ReviewService {
 							.findOneAndUpdate(
 								{
 									_id: identity._id,
-									...(identity.isUser ? { memberType: MemberType.USER, memberStatus: MemberStatus.ACTIVE } : {}),
+									...(identity.isUser
+										? { memberType: { $in: [MemberType.USER, MemberType.TRAINER] }, memberStatus: MemberStatus.ACTIVE }
+										: {}),
 								},
 								{ $inc: { __v: 1 } },
 								{ session, new: true, timestamps: false },
@@ -54,7 +56,8 @@ export class ReviewService {
 							.select('_id')
 							.lean()
 							.exec();
-						if (!member && identity.isUser) throw new ForbiddenException('An active USER account is required');
+						if (!member && identity.isUser)
+							throw new ForbiddenException('An active USER or TRAINER account is required');
 						if (!member) throw new NotFoundException('Reservation trainer not found');
 					}
 					// Fence hard removal/ownership edits without adding an ACTIVE-parent visibility policy.

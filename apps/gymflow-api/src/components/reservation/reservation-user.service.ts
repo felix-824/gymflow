@@ -110,7 +110,9 @@ export class ReservationUserService {
 							.findOneAndUpdate(
 								{
 									_id: identity._id,
-									...(identity.isUser ? { memberType: MemberType.USER, memberStatus: MemberStatus.ACTIVE } : {}),
+									...(identity.isUser
+										? { memberType: { $in: [MemberType.USER, MemberType.TRAINER] }, memberStatus: MemberStatus.ACTIVE }
+										: {}),
 								},
 								{ $inc: { __v: 1 } },
 								{ session, new: true, timestamps: false },
@@ -118,7 +120,8 @@ export class ReservationUserService {
 							.select('_id')
 							.lean()
 							.exec();
-						if (identity.isUser && !member) throw new ForbiddenException('An active USER account is required');
+						if (identity.isUser && !member)
+							throw new ForbiddenException('An active USER or TRAINER account is required');
 						// A missing/inactive trainer must not trap the USER's future reservation.
 					}
 					const current = await this.reservationModel.findOne(owned).session(session).lean().exec();

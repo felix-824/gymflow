@@ -283,18 +283,24 @@ describe('USER reservation read/cancel against real disposable GraphQL and Mongo
 	it('returns empty arrays for an empty successful list', async () => {
 		expect(list(await read())).toEqual({ list: [], metaCounter: [] });
 	});
-	it.each(['guest', 'trainer', 'admin', 'blocked', 'deleted'])('denies %s for both operations', async (role) => {
+	it.each(['guest', 'admin', 'blocked', 'deleted'])('denies %s for both operations', async (role) => {
 		const record = await fixture();
 		if (role === 'blocked' || role === 'deleted')
 			await members.updateOne(
 				{ _id: user._id },
 				{ memberStatus: role === 'blocked' ? MemberStatus.BLOCK : MemberStatus.DELETE },
 			);
-		const viewer = role === 'guest' ? null : role === 'trainer' ? trainer : role === 'admin' ? admin : user;
+		const viewer = role === 'guest' ? null : role === 'admin' ? admin : user;
 		const before = await snapshot();
 		failed(await read({}, 1, 10, viewer));
 		failed(await cancel(record._id, viewer));
 		expect(await snapshot()).toBe(before);
+	});
+	it('allows a TRAINER to read only their own customer history and denies foreign cancellation', async () => {
+		const record = await fixture();
+		expect(list(await read({}, 1, 10, trainer)).list).toEqual([]);
+		failed(await cancel(record._id, trainer), 'Reservation not found');
+		expect((await reservations.findById(record._id))!.reservationStatus).toBe(record.reservationStatus);
 	});
 	it.each([
 		{ page: 0 },
@@ -506,9 +512,9 @@ describe('USER reservation read/cancel against real disposable GraphQL and Mongo
 		expect(result.errors).toBeUndefined();
 		expect(result.data!.cancelReservation!.reservationStatus).toBe(ReservationStatus.CANCELLED);
 	});
-	it('revalidates the USER current role inside the protected service', async () => {
+	it('rejects an ADMIN role change inside the protected customer cancellation service', async () => {
 		const record = await fixture();
-		await members.updateOne({ _id: user._id }, { memberType: MemberType.TRAINER });
+		await members.updateOne({ _id: user._id }, { memberType: MemberType.ADMIN });
 		const before = await snapshot();
 		await expect(service.cancelReservation(user._id, record._id)).rejects.toThrow('active USER');
 		expect(await snapshot()).toBe(before);

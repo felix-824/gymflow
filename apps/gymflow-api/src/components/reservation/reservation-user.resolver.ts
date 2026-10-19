@@ -15,7 +15,7 @@ import { ReservationUserService } from './reservation-user.service';
 export class ReservationUserResolver {
 	constructor(private readonly reservationUserService: ReservationUserService) {}
 
-	@Roles(MemberType.USER)
+	@Roles(MemberType.USER, MemberType.TRAINER)
 	@UseGuards(RolesGuard)
 	@Query(() => MyReservations)
 	public async getMyReservations(
@@ -25,7 +25,7 @@ export class ReservationUserResolver {
 		return await this.reservationUserService.getMyReservations(memberId, input);
 	}
 
-	@Roles(MemberType.USER)
+	@Roles(MemberType.USER, MemberType.TRAINER)
 	@UseGuards(RolesGuard)
 	@Mutation(() => Reservation)
 	public async cancelReservation(

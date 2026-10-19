@@ -278,7 +278,7 @@ describe('Reviews v1 against real Nest GraphQL and disposable Mongo', () => {
 					{ memberStatus: kind === 'blocked' ? MemberStatus.BLOCK : MemberStatus.DELETE },
 				);
 			if (kind === 'missing') await members.deleteOne({ _id: user._id });
-			if (kind === 'changedRole') await members.updateOne({ _id: user._id }, { memberType: MemberType.TRAINER });
+			if (kind === 'changedRole') await members.updateOne({ _id: user._id }, { memberType: MemberType.ADMIN });
 			const before = await snapshot();
 			failed(await create(record._id, {}, viewer));
 			expect(await snapshot()).toBe(before);
@@ -393,7 +393,7 @@ describe('Reviews v1 against real Nest GraphQL and disposable Mongo', () => {
 					await members.updateOne(
 						{ _id: user._id },
 						kind === 'role'
-							? { memberType: MemberType.TRAINER }
+							? { memberType: MemberType.ADMIN }
 							: { memberStatus: kind === 'blocked' ? MemberStatus.BLOCK : MemberStatus.DELETE },
 					);
 			} finally {

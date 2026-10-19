@@ -319,14 +319,14 @@ describe('Trainer applications against disposable MongoDB replica set', () => {
 			expect((await applications.findById(application._id))!.memberId.equals(user._id)).toBe(true);
 		},
 	);
-	it('has no public enumeration/admin review operations or application data on public members', async () => {
+	it('keeps administration and applicant data private', async () => {
 		await rejected();
 		expect((await gql(read)).errors).toBeDefined();
 		for (const query of [
 			'{getTrainerApplications{_id}}',
 			'{getTrainerApplication(applicationId:"' + String(user._id) + '"){_id}}',
-			'{getTrainerApplicationsByAdmin{list{_id}}}',
-			'mutation{reviewTrainerApplication{_id}}',
+			'{getTrainerApplicationsByAdmin(input:{page:1,limit:10,search:{}}){list{_id}}}',
+			'mutation{reviewTrainerApplication(input:{applicationId:"' + String(user._id) + '",decision:APPROVED}){_id}}',
 			'{getMember(memberId:"' + String(user._id) + '"){trainerApplication{bio}}}',
 			'{getMyTrainerApplication{reviewedBy}}',
 		]) {

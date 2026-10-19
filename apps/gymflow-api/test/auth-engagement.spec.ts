@@ -24,6 +24,7 @@ import { Member } from '../src/libs/dto/member/member';
 import { MemberInput } from '../src/libs/dto/member/member.input';
 import { MemberSelfUpdate } from '../src/libs/dto/member/member.update';
 import { dependency, query } from './helpers';
+import { validate } from 'class-validator';
 const id = new Types.ObjectId();
 describe('Current-account authorization and safe member updates', () => {
 	it('uses only identity claims and reloads the current account role', async () => {
@@ -82,32 +83,89 @@ describe('Current-account authorization and safe member updates', () => {
 			),
 		).resolves.toBe(true);
 	});
-	it('rejects public ADMIN signup before persistence', async () => {
-		const create = jest.fn();
+	it.each([MemberType.TRAINER, MemberType.ADMIN, 'UNKNOWN', 123])(
+		'rejects direct %s signup before hashing or persistence',
+		async (memberType) => {
+			const create = jest.fn();
+			const hashPassword = jest.fn();
+			const service = new MemberService(
+				dependency({ create }),
+				dependency({}),
+				dependency({ hashPassword }),
+				dependency({}),
+				dependency({}),
+			);
+			await expect(service.signup(dependency<MemberInput>({ memberType }))).rejects.toThrow('Invalid signup role');
+			expect(hashPassword).not.toHaveBeenCalled();
+			expect(create).not.toHaveBeenCalled();
+		},
+	);
+	it.each([undefined, null, MemberType.USER])(
+		'persists USER for signup role %s and hashes passwords',
+		async (memberType) => {
+			const create = jest.fn().mockResolvedValue({ _id: id });
+			const hashPassword = jest.fn().mockResolvedValue('hashed');
+			const service = new MemberService(
+				dependency({ create }),
+				dependency({}),
+				dependency({ hashPassword }),
+				dependency({}),
+				dependency({}),
+			);
+			await service.signup(
+				dependency<MemberInput>({
+					memberType,
+					memberNick: 'tester',
+					memberPhone: '123',
+					memberPassword: 'secret',
+					memberStatus: MemberStatus.BLOCK,
+					memberPrograms: 99,
+					_id: 'client-owned-id',
+				}),
+			);
+			expect(create).toHaveBeenCalledWith({
+				memberType: MemberType.USER,
+				memberPassword: 'hashed',
+				memberNick: 'tester',
+				memberPhone: '123',
+				memberAuthType: undefined,
+			});
+		},
+	);
+	it.each([undefined, null, MemberType.USER, MemberType.TRAINER, MemberType.ADMIN, 'UNKNOWN', 123])(
+		'validates public signup role %s at the DTO boundary',
+		async (memberType) => {
+			const input = Object.assign(new MemberInput(), {
+				memberType,
+				memberNick: 'tester',
+				memberPhone: '123',
+				memberPassword: 'secret',
+			});
+			const errors = await validate(input);
+			expect(errors.some((error) => error.property === 'memberType')).toBe(
+				memberType != null && memberType !== MemberType.USER,
+			);
+		},
+	);
+	it('restricts generic TRAINER assignment to an already existing trainer in the atomic update', async () => {
+		const findOneAndUpdate = jest.fn(() => query(null));
+		const revokeMemberSessions = jest.fn();
 		const service = new MemberService(
-			dependency({ create }),
+			dependency({ findOneAndUpdate }),
 			dependency({}),
-			dependency({}),
-			dependency({}),
-			dependency({}),
-		);
-		await expect(service.signup(dependency<MemberInput>({ memberType: MemberType.ADMIN }))).rejects.toThrow(
-			'Invalid signup role',
-		);
-		expect(create).not.toHaveBeenCalled();
-	});
-	it.each([MemberType.USER, MemberType.TRAINER])('permits %s signup and hashes passwords', async (memberType) => {
-		const create = jest.fn().mockResolvedValue({ _id: id });
-		const hashPassword = jest.fn().mockResolvedValue('hashed');
-		const service = new MemberService(
-			dependency({ create }),
-			dependency({}),
-			dependency({ hashPassword }),
+			dependency({ revokeMemberSessions }),
 			dependency({}),
 			dependency({}),
 		);
-		await service.signup({ memberType, memberNick: 'tester', memberPhone: '123', memberPassword: 'secret' });
-		expect(create).toHaveBeenCalledWith(expect.objectContaining({ memberType, memberPassword: 'hashed' }));
+		await expect(service.updateMemberByAdmin({ _id: id, memberType: MemberType.TRAINER })).rejects.toThrow(
+			'Trainer approval is required',
+		);
+		expect(findOneAndUpdate).toHaveBeenCalledWith(
+			{ _id: id, memberType: MemberType.TRAINER },
+			{ _id: id, memberType: MemberType.TRAINER },
+			{ new: true, runValidators: true },
+		);
+		expect(revokeMemberSessions).not.toHaveBeenCalled();
 	});
 	it('strips role/status/identity from self update and hashes changed passwords', async () => {
 		const findOneAndUpdate = jest.fn((_filter: unknown, _update: unknown) => {

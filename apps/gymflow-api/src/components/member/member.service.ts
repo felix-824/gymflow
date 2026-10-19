@@ -37,12 +37,17 @@ export class MemberService {
 	) {}
 
 	public async signup(input: MemberInput): Promise<OwnerMember> {
-		if (input.memberType != null && ![MemberType.USER, MemberType.TRAINER].includes(input.memberType))
+		if (input.memberType != null && input.memberType !== MemberType.USER)
 			throw new BadRequestException('Invalid signup role');
-		input.memberType ??= MemberType.USER;
-		input.memberPassword = await this.authService.hashPassword(input.memberPassword);
+		const memberPassword = await this.authService.hashPassword(input.memberPassword);
 		try {
-			const result = await this.memberModel.create(input);
+			const result = await this.memberModel.create({
+				memberNick: input.memberNick,
+				memberPhone: input.memberPhone,
+				memberPassword,
+				memberAuthType: input.memberAuthType,
+				memberType: MemberType.USER,
+			});
 			return ownerMemberData(result);
 		} catch {
 			throw new BadRequestException(Message.USED_MEMBER_NICK_OR_PHONE);
@@ -241,9 +246,15 @@ export class MemberService {
 			throw new BadRequestException('Invalid status');
 		if (input.memberPassword) input.memberPassword = await this.authService.hashPassword(input.memberPassword);
 		const result = await this.memberModel
-			.findOneAndUpdate({ _id: input._id }, input, { new: true, runValidators: true })
+			.findOneAndUpdate(
+				{ _id: input._id, ...(input.memberType === MemberType.TRAINER ? { memberType: MemberType.TRAINER } : {}) },
+				input,
+				{ new: true, runValidators: true },
+			)
 			.select(adminMemberProjection)
 			.exec();
+		if (!result && input.memberType === MemberType.TRAINER)
+			throw new BadRequestException('Trainer approval is required');
 		if (!result) throw new InternalServerErrorException(Message.UPDATE_FAILED);
 		if (input.memberPassword || input.memberStatus === MemberStatus.BLOCK || input.memberStatus === MemberStatus.DELETE)
 			await this.authService.revokeMemberSessions(input._id);

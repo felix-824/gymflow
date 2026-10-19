@@ -35,8 +35,8 @@ import { dependency } from './helpers';
 
 interface AuthResult {
 	data?: {
-		login?: { accessToken: string };
-		signup?: { accessToken: string };
+		login?: { accessToken: string; memberType?: MemberType };
+		signup?: { accessToken: string; memberType?: MemberType };
 		getMyMember?: { memberType: MemberType; memberPhone: string };
 		refreshSession?: { accessToken: string };
 		logoutSession?: boolean;
@@ -112,14 +112,14 @@ describe('Production auth sessions against disposable MongoDB', () => {
 		);
 	});
 	afterEach(() => jest.restoreAllMocks());
-	const gql = async (query: string, cookie = '', access = '') => {
+	const gql = async (query: string, cookie = '', access = '', variables?: Record<string, unknown>) => {
 		const operation = request(app.getHttpServer())
 			.post('/graphql')
 			.set('Apollo-Require-Preflight', 'true')
 			.set('Origin', 'http://localhost:3000');
 		if (cookie) operation.set('Cookie', cookie);
 		if (access) operation.set('Authorization', 'Bearer ' + access);
-		const response = await operation.send({ query });
+		const response = await operation.send({ query, variables });
 		return {
 			body: dependency<AuthResult>(response.body),
 			headers: dependency<Record<string, string | string[]>>(response.headers),
@@ -198,6 +198,176 @@ describe('Production auth sessions against disposable MongoDB', () => {
 			expect(await db.model('AuthSession').countDocuments({})).toBe(1);
 		},
 	);
+	it.each([undefined, null, MemberType.USER])(
+		'creates a USER account/session for signup role %s',
+		async (memberType) => {
+			const response = await gql(
+				'mutation($input:MemberInput!){signup(input:$input){memberType accessToken}}',
+				'',
+				'',
+				{
+					input: {
+						memberNick: 'new-user',
+						memberPhone: 'new-phone',
+						memberPassword: password,
+						...(memberType === undefined ? {} : { memberType }),
+					},
+				},
+			);
+			expect(response.body.errors).toBeUndefined();
+			expect(response.body.data!.signup!.memberType).toBe(MemberType.USER);
+			expect((await auth.verifyToken(response.body.data!.signup!.accessToken)).memberType).toBe(MemberType.USER);
+			const persisted = await db.model<Member>('Member').findOne({ memberNick: 'new-user' });
+			expect(persisted!.memberType).toBe(MemberType.USER);
+			expect(await db.model('Member').countDocuments({})).toBe(4);
+			expect(await db.model('AuthSession').countDocuments({})).toBe(1);
+			expect(String(response.headers['set-cookie'])).toContain('HttpOnly');
+			const login = await gql(
+				'mutation{login(input:{memberNick:"new-user",memberPassword:"' + password + '"}){memberType accessToken}}',
+			);
+			expect(login.body.errors).toBeUndefined();
+			expect((await auth.verifyToken(login.body.data!.login!.accessToken)).memberType).toBe(MemberType.USER);
+		},
+	);
+	it.each([MemberType.TRAINER, MemberType.ADMIN, 'UNKNOWN', 123, true, {}, []])(
+		'rejects manipulated signup role %j without account, session or cookie side effects',
+		async (memberType) => {
+			const createSession = jest.spyOn(auth, 'createSession');
+			const setRefreshCookie = jest.spyOn(auth, 'setRefreshCookie');
+			const response = await gql('mutation($input:MemberInput!){signup(input:$input){accessToken}}', '', '', {
+				input: { memberNick: 'rejected', memberPhone: 'rejected-phone', memberPassword: password, memberType },
+			});
+			expect(response.body.errors?.length).toBeGreaterThan(0);
+			expect(response.body.data?.signup).toBeFalsy();
+			expect(await db.model('Member').countDocuments({})).toBe(3);
+			expect(await db.model('AuthSession').countDocuments({})).toBe(0);
+			expect(createSession).not.toHaveBeenCalled();
+			expect(setRefreshCookie).not.toHaveBeenCalled();
+			expect(response.headers['set-cookie']).toBeUndefined();
+		},
+	);
+	it.each([MemberType.TRAINER, MemberType.ADMIN])(
+		'rejects a privileged %s signup literal before session creation',
+		async (memberType) => {
+			const response = await gql(
+				'mutation{signup(input:{memberNick:"rejected",memberPhone:"rejected-phone",memberPassword:"' +
+					password +
+					'",memberType:' +
+					memberType +
+					'}){accessToken}}',
+			);
+			expect(response.body.errors?.length).toBeGreaterThan(0);
+			expect(await db.model('Member').countDocuments({})).toBe(3);
+			expect(await db.model('AuthSession').countDocuments({})).toBe(0);
+			expect(response.headers['set-cookie']).toBeUndefined();
+		},
+	);
+	it.each([MemberType.TRAINER, MemberType.ADMIN])(
+		'rejects direct %s signup without persistence',
+		async (memberType) => {
+			await expect(
+				service.signup({ memberType, memberNick: 'rejected', memberPhone: 'rejected-phone', memberPassword: password }),
+			).rejects.toThrow('Invalid signup role');
+			expect(await db.model('Member').countDocuments({})).toBe(3);
+			expect(await db.model('AuthSession').countDocuments({})).toBe(0);
+		},
+	);
+	it.each([MemberType.USER, MemberType.TRAINER, MemberType.ADMIN])(
+		'preserves existing %s login and role',
+		async (memberType) => {
+			const existing = [user, trainer, admin].find((member) => member.memberType === memberType)!;
+			const response = await gql(
+				'mutation{login(input:{memberNick:"' +
+					existing.memberNick +
+					'",memberPassword:"' +
+					password +
+					'"}){memberType accessToken}}',
+			);
+			expect(response.body.errors).toBeUndefined();
+			expect(response.body.data!.login!.memberType).toBe(memberType);
+			expect((await auth.verifyToken(response.body.data!.login!.accessToken)).memberType).toBe(memberType);
+			if (memberType === MemberType.TRAINER) {
+				const programs = await gql(
+					'{getTrainerPrograms(input:{page:1,limit:10,search:{}}){list{_id}}}',
+					'',
+					response.body.data!.login!.accessToken,
+				);
+				expect(programs.body.errors).toBeUndefined();
+			}
+		},
+	);
+	it.each([MemberType.USER, MemberType.ADMIN])(
+		'denies generic %s to TRAINER promotion atomically',
+		async (memberType) => {
+			const target = memberType === MemberType.USER ? user : admin;
+			const access = await fixtureAccessToken(admin, app);
+			const before = await db.model('Member').findById(target._id).lean();
+			const response = await gql(
+				'mutation{updateMemberByAdmin(input:{_id:"' +
+					String(target._id) +
+					'",memberType:TRAINER,memberStatus:BLOCK}){_id}}',
+				'',
+				access,
+			);
+			expect(response.body.errors?.length).toBeGreaterThan(0);
+			expect(await db.model('Member').findById(target._id).lean()).toEqual(before);
+			expect((await auth.verifyToken(access)).memberType).toBe(MemberType.ADMIN);
+			await expect(service.updateMemberByAdmin({ _id: target._id, memberType: MemberType.TRAINER })).rejects.toThrow(
+				'Trainer approval is required',
+			);
+		},
+	);
+	it.each([MemberStatus.BLOCK, MemberStatus.DELETE])(
+		'preserves admin %s moderation and revokes sessions',
+		async (memberStatus) => {
+			const targetAccess = await fixtureAccessToken(trainer, app);
+			const access = await fixtureAccessToken(admin, app);
+			const response = await gql(
+				'mutation{updateMemberByAdmin(input:{_id:"' +
+					String(trainer._id) +
+					'",memberStatus:' +
+					memberStatus +
+					'}){_id}}',
+				'',
+				access,
+			);
+			expect(response.body.errors).toBeUndefined();
+			const persisted = await db.model<Member>('Member').findById(trainer._id);
+			expect(persisted!.memberType).toBe(MemberType.TRAINER);
+			expect(persisted!.memberStatus).toBe(memberStatus);
+			await expect(auth.verifyToken(targetAccess)).rejects.toThrow();
+		},
+	);
+	it('preserves existing TRAINER assignments and legitimate ADMIN role handling', async () => {
+		const access = await fixtureAccessToken(admin, app);
+		const trainerUpdate = await gql(
+			'mutation{updateMemberByAdmin(input:{_id:"' +
+				String(trainer._id) +
+				'",memberType:TRAINER,memberFullName:"Existing Trainer"}){_id}}',
+			'',
+			access,
+		);
+		expect(trainerUpdate.body.errors).toBeUndefined();
+		expect((await db.model<Member>('Member').findById(trainer._id))!.memberType).toBe(MemberType.TRAINER);
+		const adminUpdate = await gql(
+			'mutation{updateMemberByAdmin(input:{_id:"' + String(user._id) + '",memberType:ADMIN}){_id}}',
+			'',
+			access,
+		);
+		expect(adminUpdate.body.errors).toBeUndefined();
+		expect((await db.model<Member>('Member').findById(user._id))!.memberType).toBe(MemberType.ADMIN);
+	});
+	it.each([MemberType.USER, MemberType.TRAINER])('denies %s access to generic admin updates', async (memberType) => {
+		const actor = memberType === MemberType.USER ? user : trainer;
+		const access = await fixtureAccessToken(actor, app);
+		const response = await gql(
+			'mutation{updateMemberByAdmin(input:{_id:"' + String(user._id) + '",memberType:ADMIN}){_id}}',
+			'',
+			access,
+		);
+		expect(response.body.errors?.length).toBeGreaterThan(0);
+		expect((await db.model<Member>('Member').findById(user._id))!.memberType).toBe(MemberType.USER);
+	});
 	it('rejects untrusted cookie-auth origins before creating an account/session', async () => {
 		const result = await request(app.getHttpServer())
 			.post('/graphql')

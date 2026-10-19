@@ -22,7 +22,7 @@ export class MemberInput {
 	memberPhone: string;
 
 	@IsOptional()
-	@IsIn([MemberType.USER, MemberType.TRAINER])
+	@IsIn([MemberType.USER])
 	@Field(() => MemberType, { nullable: true })
 	memberType?: MemberType;
 
